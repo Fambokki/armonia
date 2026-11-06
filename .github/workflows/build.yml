@@ -1,0 +1,61 @@
+name: Compila IPA
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installa XcodeGen
+        run: brew install xcodegen
+
+      - name: Genera il progetto Xcode
+        run: xcodegen generate
+
+      - name: Compila (senza firma)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project Armonia.xcodeproj \
+            -scheme Armonia \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build | tee build.log | grep -E "error:|warning: .*deprecated|BUILD" || true
+          test -d build/Build/Products/Release-iphoneos/Armonia.app
+
+      - name: Crea il file .ipa
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/Armonia.app Payload/
+          zip -qry Armonia.ipa Payload
+
+      - name: Carica l'IPA tra gli artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Armonia-ipa
+          path: Armonia.ipa
+
+      - name: Pubblica come release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Armonia build ${{ github.run_number }}
+          files: Armonia.ipa
+
+      - name: Log completo in caso di errore
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log

@@ -1,0 +1,6 @@
+build/
+*.xcodeproj/
+Armonia/Info.plist
+Payload/
+*.ipa
+.DS_Store
