@@ -120,7 +120,8 @@ struct SpotifyImportView: View {
     private var reviewForm: some View {
         let found = matches.compactMap { $0 }
         Section {
-            TextField("Nome playlist", text: $name)
+            TextField("Nome playlist", text: $name, axis: .vertical)
+                .lineLimit(1...4)
             Button("Crea playlist con \(found.count) brani") {
                 library.createPlaylist(name.isEmpty ? "Da Spotify" : name, tracks: found)
                 dismiss()

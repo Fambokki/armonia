@@ -108,14 +108,10 @@ struct LibraryView: View {
                 .padding(.bottom, 90)
             }
         }
-        .alert("Nuova playlist", isPresented: $showNewPlaylist) {
-            TextField("Nome", text: $newName)
-            Button("Crea") {
-                if !newName.trimmingCharacters(in: .whitespaces).isEmpty {
-                    library.createPlaylist(newName)
-                }
+        .sheet(isPresented: $showNewPlaylist) {
+            PlaylistNameSheet(title: "Nuova playlist", actionTitle: "Crea", initial: "") { name in
+                library.createPlaylist(name)
             }
-            Button("Annulla", role: .cancel) {}
         }
         .alert(importMessage ?? "", isPresented: Binding(get: { importMessage != nil }, set: { if !$0 { importMessage = nil } })) {
             Button("OK", role: .cancel) {}
@@ -338,14 +334,10 @@ struct TrackListScreen: View {
             }
         }
         .onAppear(perform: loadSort)
-        .alert("Rinomina playlist", isPresented: $showRename) {
-            TextField("Nome", text: $newName)
-            Button("Salva") {
-                if let id = playlistID, !newName.trimmingCharacters(in: .whitespaces).isEmpty {
-                    library.renamePlaylist(id, to: newName)
-                }
+        .sheet(isPresented: $showRename) {
+            PlaylistNameSheet(title: "Rinomina playlist", actionTitle: "Salva", initial: newName) { name in
+                if let id = playlistID { library.renamePlaylist(id, to: name) }
             }
-            Button("Annulla", role: .cancel) {}
         }
     }
 
@@ -398,5 +390,70 @@ struct TrackListScreen: View {
 
     private func saveSort() {
         UserDefaults.standard.set("\(sort.rawValue)|\(ascending ? "asc" : "desc")", forKey: sortKey)
+    }
+}
+
+/// Finestra per dare o cambiare il nome a una playlist.
+/// Il campo va a capo e si allarga con il testo, così il nome si legge sempre per intero.
+struct PlaylistNameSheet: View {
+    let title: String
+    let actionTitle: String
+    let initial: String
+    let onSave: (String) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @FocusState private var focused: Bool
+
+    private var trimmed: String {
+        name.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespaces)
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 10) {
+                TextField("Nome della playlist", text: $name, axis: .vertical)
+                    .font(.title3.weight(.semibold))
+                    .lineLimit(1...5)
+                    .focused($focused)
+                    .submitLabel(.done)
+                    .onChange(of: name) { _, v in
+                        // Invio = conferma, non una nuova riga.
+                        if v.contains("\n") {
+                            name = v.replacingOccurrences(of: "\n", with: "")
+                            save()
+                        }
+                    }
+                    .padding(14)
+                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                Text("\(trimmed.count) caratteri")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 4)
+                Spacer(minLength: 0)
+            }
+            .padding(20)
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Annulla") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(actionTitle) { save() }
+                        .fontWeight(.semibold)
+                        .disabled(trimmed.isEmpty)
+                }
+            }
+        }
+        .presentationDetents([.height(260), .medium])
+        .onAppear {
+            name = initial
+            focused = true
+        }
+    }
+
+    private func save() {
+        guard !trimmed.isEmpty else { return }
+        onSave(trimmed)
+        dismiss()
     }
 }

@@ -167,7 +167,8 @@ struct PlaylistPicker: View {
             List {
                 Section {
                     HStack {
-                        TextField("Nuova playlist", text: $newName)
+                        TextField("Nuova playlist", text: $newName, axis: .vertical)
+                            .lineLimit(1...4)
                         Button("Crea") {
                             let id = library.createPlaylist(newName)
                             library.add(track, to: id)
