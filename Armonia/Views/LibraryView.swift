@@ -150,6 +150,56 @@ struct LibraryView: View {
     }
 }
 
+/// Ordinamenti disponibili nelle liste di brani.
+enum TrackSort: String, CaseIterable, Identifiable {
+    case custom, recentFirst, title, artist, album, duration
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .custom: return "Personalizzato"
+        case .recentFirst: return "Aggiunti di recente"
+        case .title: return "Titolo"
+        case .artist: return "Artista"
+        case .album: return "Album"
+        case .duration: return "Durata"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .custom: return "hand.draw"
+        case .recentFirst: return "clock.arrow.circlepath"
+        case .title: return "textformat"
+        case .artist: return "person"
+        case .album: return "square.stack"
+        case .duration: return "timer"
+        }
+    }
+
+    /// Ha senso invertire l'ordine (A→Z / Z→A, breve→lungo…).
+    var canReverse: Bool { self != .custom && self != .recentFirst }
+}
+
+private func seconds(_ d: String?) -> Int {
+    (d ?? "").split(separator: ":").reduce(0) { $0 * 60 + (Int($1) ?? 0) }
+}
+
+func sortTracks(_ tracks: [Track], by sort: TrackSort, ascending: Bool) -> [Track] {
+    let cmp: (String, String) -> Bool = { $0.localizedStandardCompare($1) == .orderedAscending }
+    var out: [Track]
+    switch sort {
+    case .custom: return tracks
+    case .recentFirst: return tracks.reversed()
+    case .title: out = tracks.sorted { cmp($0.title, $1.title) }
+    case .artist: out = tracks.sorted { $0.artist == $1.artist ? cmp($0.title, $1.title) : cmp($0.artist, $1.artist) }
+    case .album: out = tracks.sorted { ($0.album ?? "") == ($1.album ?? "") ? cmp($0.title, $1.title) : cmp($0.album ?? "~", $1.album ?? "~") }
+    case .duration: out = tracks.sorted { seconds($0.duration) < seconds($1.duration) }
+    }
+    return ascending ? out : out.reversed()
+}
+
 struct TrackListScreen: View {
     let source: TrackSource
 
@@ -157,17 +207,44 @@ struct TrackListScreen: View {
     @EnvironmentObject private var player: PlayerManager
     @State private var showRename = false
     @State private var newName = ""
+    @State private var sort: TrackSort = .custom
+    @State private var ascending = true
+    @State private var filter = ""
+    @State private var editMode: EditMode = .inactive
 
-    private var tracks: [Track] { library.tracks(for: source) }
+    private var allTracks: [Track] { library.tracks(for: source) }
+
+    /// Brani come li vede l'utente: ordinati e filtrati.
+    private var tracks: [Track] {
+        var list = sortTracks(allTracks, by: sort, ascending: ascending)
+        let q = filter.trimmingCharacters(in: .whitespaces)
+        if !q.isEmpty {
+            list = list.filter {
+                $0.title.localizedCaseInsensitiveContains(q) || $0.artist.localizedCaseInsensitiveContains(q)
+                    || ($0.album ?? "").localizedCaseInsensitiveContains(q)
+            }
+        }
+        return list
+    }
 
     private var playlistID: UUID? {
         if case .playlist(let id) = source { return id }
         return nil
     }
 
-    /// Riordinare ha senso solo nelle playlist.
+    private var sortKey: String {
+        switch source {
+        case .favorites: return "sort-favorites"
+        case .recents: return "sort-recents"
+        case .downloads: return "sort-downloads"
+        case .locals: return "sort-locals"
+        case .playlist(let id): return "sort-\(id.uuidString)"
+        }
+    }
+
+    /// Il trascinamento manuale funziona solo nelle playlist, in ordine personalizzato e senza filtro.
     private var moveAction: ((IndexSet, Int) -> Void)? {
-        guard let id = playlistID else { return nil }
+        guard let id = playlistID, sort == .custom, filter.isEmpty else { return nil }
         let store = library
         return { from, to in store.move(from: from, to: to, in: id) }
     }
@@ -181,17 +258,18 @@ struct TrackListScreen: View {
     }
 
     var body: some View {
+        let shown = tracks
         List {
-            if !tracks.isEmpty {
+            if !allTracks.isEmpty {
                 VStack(spacing: 10) {
                     HStack(spacing: 12) {
                         Button {
-                            player.play(tracks)
+                            player.play(shown)
                         } label: {
                             Label("Riproduci", systemImage: "play.fill").frame(maxWidth: .infinity)
                         }
                         Button {
-                            player.play(tracks.shuffled())
+                            player.play(shown.shuffled())
                         } label: {
                             Label("Casuale", systemImage: "shuffle").frame(maxWidth: .infinity)
                         }
@@ -199,33 +277,46 @@ struct TrackListScreen: View {
                     .buttonStyle(.bordered)
                     .controlSize(.large)
 
-                    switch source {
-                    case .downloads:
-                        Text("\(tracks.count) brani · \(formatBytes(Storage.size(of: Storage.downloads)))")
-                            .font(.footnote).foregroundStyle(.secondary)
-                    case .locals:
-                        Text("\(tracks.count) file · \(formatBytes(Storage.size(of: Storage.locals)))")
-                            .font(.footnote).foregroundStyle(.secondary)
-                    default:
-                        DownloadAllButton(tracks: tracks)
-                            .font(.subheadline)
-                            .buttonStyle(.borderless)
+                    HStack {
+                        sortMenu
+                        Spacer()
+                        switch source {
+                        case .downloads:
+                            Text("\(allTracks.count) brani · \(formatBytes(Storage.size(of: Storage.downloads)))")
+                                .font(.footnote).foregroundStyle(.secondary)
+                        case .locals:
+                            Text("\(allTracks.count) file · \(formatBytes(Storage.size(of: Storage.locals)))")
+                                .font(.footnote).foregroundStyle(.secondary)
+                        default:
+                            DownloadAllButton(tracks: allTracks)
+                                .font(.subheadline)
+                                .buttonStyle(.borderless)
+                        }
                     }
                 }
                 .listRowSeparator(.hidden)
             }
 
-            ForEach(Array(tracks.enumerated()), id: \.offset) { i, t in
-                TrackRow(track: t) { player.play(tracks, startAt: i) }
+            ForEach(Array(shown.enumerated()), id: \.offset) { i, t in
+                TrackRow(track: t) { player.play(shown, startAt: i) }
             }
-            .onDelete { library.remove(at: $0, from: source) }
+            .onDelete { offsets in
+                // Gli indici si riferiscono alla lista mostrata: si cancella per identità del brano.
+                let ids = Set(offsets.map { shown[$0].id })
+                let original = IndexSet(allTracks.indices.filter { ids.contains(allTracks[$0].id) })
+                library.remove(at: original, from: source)
+            }
             .onMove(perform: moveAction)
         }
         .listStyle(.plain)
+        .environment(\.editMode, $editMode)
         .navigationTitle(library.title(for: source))
+        .searchable(text: $filter, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Cerca in questa lista")
         .overlay {
-            if tracks.isEmpty {
+            if allTracks.isEmpty {
                 ContentUnavailableView("Ancora vuota", systemImage: "music.note", description: Text(emptyText))
+            } else if shown.isEmpty {
+                ContentUnavailableView.search(text: filter)
             }
         }
         .toolbar {
@@ -237,10 +328,14 @@ struct TrackListScreen: View {
                     } label: {
                         Image(systemName: "pencil")
                     }
-                    EditButton()
+                    Button(editMode.isEditing ? "Fine" : "Modifica") {
+                        if !editMode.isEditing && sort != .custom { setSort(.custom) }
+                        withAnimation { editMode = editMode.isEditing ? .inactive : .active }
+                    }
                 }
             }
         }
+        .onAppear(perform: loadSort)
         .alert("Rinomina playlist", isPresented: $showRename) {
             TextField("Nome", text: $newName)
             Button("Salva") {
@@ -250,5 +345,56 @@ struct TrackListScreen: View {
             }
             Button("Annulla", role: .cancel) {}
         }
+    }
+
+    // MARK: - Ordinamento
+
+    private var sortMenu: some View {
+        Menu {
+            Picker("Ordina per", selection: Binding(get: { sort }, set: { setSort($0) })) {
+                ForEach(TrackSort.allCases) { s in
+                    Label(s.label, systemImage: s.symbol).tag(s)
+                }
+            }
+            if sort.canReverse {
+                Button {
+                    ascending.toggle()
+                    saveSort()
+                } label: {
+                    Label(ascending ? "Inverti (Z→A)" : "Inverti (A→Z)", systemImage: "arrow.up.arrow.down")
+                }
+            }
+            if let id = playlistID, sort != .custom {
+                Divider()
+                Button {
+                    library.setOrder(sortTracks(allTracks, by: sort, ascending: ascending), in: id)
+                    setSort(.custom)
+                } label: {
+                    Label("Salva come ordine della playlist", systemImage: "checkmark.circle")
+                }
+            }
+        } label: {
+            Label(sort == .custom ? "Ordina" : sort.label + (sort.canReverse && !ascending ? " ↓" : ""),
+                  systemImage: "arrow.up.arrow.down")
+                .font(.subheadline)
+        }
+    }
+
+    private func setSort(_ s: TrackSort) {
+        if s != sort { ascending = true }
+        sort = s
+        if s != .custom { editMode = .inactive }
+        saveSort()
+    }
+
+    private func loadSort() {
+        let raw = UserDefaults.standard.string(forKey: sortKey) ?? ""
+        let parts = raw.split(separator: "|")
+        sort = parts.first.flatMap { TrackSort(rawValue: String($0)) } ?? .custom
+        ascending = parts.count < 2 || parts[1] != "desc"
+    }
+
+    private func saveSort() {
+        UserDefaults.standard.set("\(sort.rawValue)|\(ascending ? "asc" : "desc")", forKey: sortKey)
     }
 }

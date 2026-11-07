@@ -180,6 +180,12 @@ final class LibraryStore: ObservableObject {
         }
     }
 
+    /// Salva un nuovo ordine dei brani nella playlist.
+    func setOrder(_ tracks: [Track], in playlistID: UUID) {
+        guard let i = playlists.firstIndex(where: { $0.id == playlistID }) else { return }
+        playlists[i].tracks = tracks
+    }
+
     func move(from source: IndexSet, to destination: Int, in playlistID: UUID) {
         guard let i = playlists.firstIndex(where: { $0.id == playlistID }) else { return }
         playlists[i].tracks.move(fromOffsets: source, toOffset: destination)
