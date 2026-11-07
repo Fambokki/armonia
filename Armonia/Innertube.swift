@@ -1,8 +1,9 @@
 import Foundation
 
 // Client minimale per l'API interna di YouTube Music ("Innertube").
-// È la parte fragile dell'app: se YouTube cambia qualcosa, di solito basta
-// aggiornare le versioni dei client qui sotto e ricompilare.
+// È la parte fragile dell'app. I client usati per l'audio si possono aggiornare
+// senza reinstallare: all'avvio l'app legge `clients.json` dal repository GitHub
+// (vedi `remoteConfigURL`); se non lo trova usa quelli scritti qui sotto.
 
 struct StreamInfo: Sendable {
     let url: URL
@@ -27,6 +28,27 @@ private struct PlayerClient: @unchecked Sendable {
     let nameId: String
     let userAgent: String
     let extra: [String: Any]
+
+    init(name: String, version: String, nameId: String, userAgent: String, extra: [String: Any]) {
+        self.name = name
+        self.version = version
+        self.nameId = nameId
+        self.userAgent = userAgent
+        self.extra = extra
+    }
+
+    /// Legge un client dal file clients.json.
+    init?(json d: [String: Any]) {
+        guard let name = d["name"] as? String,
+              let version = d["version"] as? String,
+              let userAgent = d["userAgent"] as? String else { return nil }
+        let nameId: String
+        if let s = d["nameId"] as? String { nameId = s }
+        else if let n = d["nameId"] as? Int { nameId = String(n) }
+        else { return nil }
+        self.init(name: name, version: version, nameId: nameId, userAgent: userAgent,
+                  extra: (d["extra"] as? [String: Any]) ?? [:])
+    }
 }
 
 private struct CachedStream {
@@ -37,27 +59,55 @@ private struct CachedStream {
 actor Innertube {
     static let shared = Innertube()
 
+    // Configurazione aggiornabile senza reinstallare l'app.
+    private let remoteConfigURL = URL(string: "https://raw.githubusercontent.com/Fambokki/armonia/main/clients.json")!
+
     // Versione del client web di YouTube Music (ricerca, radio).
-    private let musicVersion = "1.20251015.01.00"
+    private var musicVersion = "1.20260707.12.00"
     private let webUA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
 
-    // Client usati per ottenere l'audio, provati in ordine.
-    private let playerClients: [PlayerClient] = [
+    // Client usati per ottenere l'audio, provati in ordine (valori di riserva).
+    // VISIONOS oggi non richiede token né decifrazione delle firme.
+    private var playerClients: [PlayerClient] = [
+        PlayerClient(
+            name: "VISIONOS",
+            version: "1.02",
+            nameId: "101",
+            userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15",
+            extra: ["deviceMake": "Apple", "deviceModel": "RealityDevice17,1", "osName": "visionOS", "osVersion": "26.5.23O471"]
+        ),
         PlayerClient(
             name: "IOS",
-            version: "20.10.4",
+            version: "21.26.4",
             nameId: "5",
-            userAgent: "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)",
+            userAgent: "com.google.ios.youtube/21.26.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)",
             extra: ["deviceMake": "Apple", "deviceModel": "iPhone16,2", "osName": "iPhone", "osVersion": "18.3.2.22D82"]
         ),
-        PlayerClient(
-            name: "ANDROID_VR",
-            version: "1.62.27",
-            nameId: "28",
-            userAgent: "com.google.android.apps.youtube.vr.oculus/1.62.27 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip",
-            extra: ["deviceMake": "Oculus", "deviceModel": "Quest 3", "androidSdkVersion": 32, "osName": "Android", "osVersion": "12L"]
-        ),
     ]
+    private var configLoaded = false
+
+    /// Scarica clients.json (al massimo una volta per avvio). Se fallisce restano i valori di riserva.
+    private func loadRemoteConfigIfNeeded() async {
+        guard !configLoaded else { return }
+        configLoaded = true
+        var req = URLRequest(url: remoteConfigURL, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 6)
+        req.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        guard let (data, resp) = try? await URLSession.shared.data(for: req),
+              (resp as? HTTPURLResponse)?.statusCode == 200,
+              let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
+        if let v = obj["musicVersion"] as? String, !v.isEmpty { musicVersion = v }
+        let clients = ((obj["playerClients"] as? [[String: Any]]) ?? []).compactMap(PlayerClient.init(json:))
+        if !clients.isEmpty { playerClients = clients }
+    }
+
+    /// Verifica che il link audio risponda davvero (YouTube a volte dà il link ma poi risponde 403).
+    private func probe(_ url: URL, userAgent: String) async -> Int {
+        var req = URLRequest(url: url, timeoutInterval: 10)
+        req.setValue("bytes=0-1", forHTTPHeaderField: "Range")
+        req.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        guard let (_, resp) = try? await URLSession.shared.data(for: req) else { return -1 }
+        return (resp as? HTTPURLResponse)?.statusCode ?? -1
+    }
 
     private var visitorData: String?
     private var streamCache: [String: CachedStream] = [:]
@@ -65,6 +115,7 @@ actor Innertube {
     // MARK: - Ricerca
 
     func search(_ query: String) async throws -> [Track] {
+        await loadRemoteConfigIfNeeded()
         let body: [String: Any] = [
             "context": musicContext(),
             "query": query,
@@ -119,7 +170,9 @@ actor Innertube {
         if let cached = streamCache[videoId], Date().timeIntervalSince(cached.date) < 3600 {
             return cached.info
         }
-        var lastReason = "nessun client disponibile"
+        await loadRemoteConfigIfNeeded()
+
+        var reasons: [String] = []
         for c in playerClients {
             var client: [String: Any] = ["clientName": c.name, "clientVersion": c.version, "hl": "it", "gl": "IT"]
             for (k, v) in c.extra { client[k] = v }
@@ -143,33 +196,48 @@ actor Innertube {
                 let ps = json["playabilityStatus"] as? [String: Any]
                 let status = ps?["status"] as? String ?? "?"
                 guard status == "OK" else {
-                    lastReason = (ps?["reason"] as? String) ?? status
+                    reasons.append("\(c.name): \((ps?["reason"] as? String) ?? status)")
                     continue
                 }
                 guard let sd = json["streamingData"] as? [String: Any] else {
-                    lastReason = "nessun flusso"
+                    reasons.append("\(c.name): nessun flusso")
                     continue
                 }
-                // Preferisce l'audio AAC (m4a), che AVPlayer riproduce nativamente.
-                let formats = (sd["adaptiveFormats"] as? [[String: Any]]) ?? []
-                let audio = formats
-                    .filter { (($0["mimeType"] as? String) ?? "").hasPrefix("audio/mp4") && $0["url"] is String }
-                    .sorted { (($0["bitrate"] as? Int) ?? 0) > (($1["bitrate"] as? Int) ?? 0) }
-                var chosen: URL?
-                if let s = audio.first?["url"] as? String { chosen = URL(string: s) }
-                if chosen == nil, let h = sd["hlsManifestUrl"] as? String { chosen = URL(string: h) }
-                guard let url = chosen else {
-                    lastReason = "flusso protetto (\(c.name))"
+
+                // Candidati in ordine: audio AAC (m4a), video+audio mp4, HLS.
+                let bitrate: ([String: Any]) -> Int = { ($0["bitrate"] as? Int) ?? 0 }
+                let adaptive = (sd["adaptiveFormats"] as? [[String: Any]]) ?? []
+                let muxed = (sd["formats"] as? [[String: Any]]) ?? []
+                var candidates: [URL] = []
+                candidates += adaptive
+                    .filter { (($0["mimeType"] as? String) ?? "").hasPrefix("audio/mp4") }
+                    .sorted { bitrate($0) > bitrate($1) }
+                    .compactMap { ($0["url"] as? String).flatMap(URL.init(string:)) }
+                candidates += muxed
+                    .filter { (($0["mimeType"] as? String) ?? "").hasPrefix("video/mp4") }
+                    .compactMap { ($0["url"] as? String).flatMap(URL.init(string:)) }
+                if let h = sd["hlsManifestUrl"] as? String, let u = URL(string: h) { candidates.append(u) }
+
+                guard !candidates.isEmpty else {
+                    reasons.append("\(c.name): flusso protetto")
                     continue
                 }
-                let info = StreamInfo(url: url, userAgent: c.userAgent)
-                streamCache[videoId] = CachedStream(info: info, date: Date())
-                return info
+                var codes: [Int] = []
+                for url in candidates.prefix(3) {
+                    let code = await probe(url, userAgent: c.userAgent)
+                    if code == 200 || code == 206 {
+                        let info = StreamInfo(url: url, userAgent: c.userAgent)
+                        streamCache[videoId] = CachedStream(info: info, date: Date())
+                        return info
+                    }
+                    codes.append(code)
+                }
+                reasons.append("\(c.name): audio rifiutato (\(codes.map { $0 < 0 ? "rete" : String($0) }.joined(separator: ",")))")
             } catch {
-                lastReason = error.localizedDescription
+                reasons.append("\(c.name): \(error.localizedDescription)")
             }
         }
-        throw InnertubeError.unplayable(lastReason)
+        throw InnertubeError.unplayable(reasons.isEmpty ? "nessun client disponibile" : reasons.joined(separator: " · "))
     }
 
     // MARK: - Rete

@@ -38,11 +38,17 @@ Sideloadly può farlo da solo con l'opzione di aggiornamento automatico se il PC
 
 ## Se smette di funzionare
 
-La parte che si rompe è quella che parla con YouTube, tutta in `Armonia/Innertube.swift`:
+La parte che si rompe è quella che parla con YouTube.
+
+**Prima prova (senza reinstallare):** modifica `clients.json` in questo repository.
+L'app lo legge a ogni avvio, quindi basta chiuderla del tutto e riaprirla.
 
 - **La ricerca non va** → aggiornare `musicVersion`.
-- **I brani non partono** ("Brano non riproducibile") → aggiornare le versioni in `playerClients`
-  (i valori aggiornati si trovano di solito nei progetti open source come yt-dlp o Metrolist).
+- **I brani non partono** ("Brano non riproducibile") → aggiornare `playerClients`.
+  Il messaggio d'errore dice cosa ha risposto ogni client (es. `VISIONOS: audio rifiutato (403)`).
+  I valori aggiornati si trovano in yt-dlp, file `yt_dlp/extractor/youtube/_base.py`.
+
+I valori di riserva, usati se `clients.json` non è raggiungibile, sono in `Armonia/Innertube.swift`.
 
 ## Struttura
 
