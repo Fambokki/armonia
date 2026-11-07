@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<defs>
+<filter id="sh" x="-30%" y="-30%" width="160%" height="160%">
+  <feDropShadow dx="0" dy="22" stdDeviation="26" flood-color="#000" flood-opacity=".28"/>
+</filter>
+<filter id="grain" x="0" y="0" width="100%" height="100%">
+  <feTurbulence type="fractalNoise" baseFrequency=".85" numOctaves="2" stitchTiles="stitch"/>
+  <feColorMatrix values="0 0 0 0 .5  0 0 0 0 .5  0 0 0 0 .5  0 0 0 .55 0"/>
+</filter>
+<filter id="blur120" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="120"/></filter>
+<filter id="blur60" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="60"/></filter>
+<filter id="blur24" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="24"/></filter>
+<filter id="blur10" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="10"/></filter>
+<radialGradient id="shine" cx="22%" cy="12%" r="80%">
+  <stop offset="0" stop-color="#fff" stop-opacity=".34"/><stop offset=".55" stop-color="#fff" stop-opacity="0"/>
+</radialGradient>
+<radialGradient id="vign" cx="50%" cy="45%" r="75%">
+  <stop offset=".6" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".35"/>
+</radialGradient>
+
+<radialGradient id="bg" cx="50%" cy="40%" r="80%"><stop offset="0" stop-color="#1c1426"/><stop offset="1" stop-color="#050507"/></radialGradient>
+<linearGradient id="gl" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#ff3b6b"/><stop offset=".6" stop-color="#ff7a59"/><stop offset="1" stop-color="#ffc46b"/></linearGradient></defs>
+<rect width="1024" height="1024" fill="url(#bg)"/>
+<g filter="url(#blur60)" opacity=".75">
+<g transform="translate(36 -22)" >
+  <g fill="none" stroke="#ff6b6b" stroke-linecap="round">
+    <path d="M357.8 862.7 A182 182 0 0 1 304.2 558.7" stroke-width="26" stroke-opacity="0.42"/>
+    <path d="M308.6 914.7 A250 250 0 0 1 240.2 526.7" stroke-width="22" stroke-opacity="0.2"/>
+  </g>
+  <g fill="url(#gl)" >
+    <circle cx="426" cy="694" r="118"/>
+    <rect x="492" y="232" width="46" height="440" rx="23"/>
+    <path d="M516 236 C 562 250, 700 300, 722 410 C 736 480, 700 540, 650 574 C 690 510, 688 440, 640 400 C 600 368, 560 360, 538 356 Z"/>
+  </g>
+</g></g>
+
+<g transform="translate(36 -22)" >
+  <g fill="none" stroke="#ff8a6b" stroke-linecap="round">
+    <path d="M357.8 862.7 A182 182 0 0 1 304.2 558.7" stroke-width="26" stroke-opacity="0.7"/>
+    <path d="M308.6 914.7 A250 250 0 0 1 240.2 526.7" stroke-width="22" stroke-opacity="0.35"/>
+  </g>
+  <g fill="url(#gl)" >
+    <circle cx="426" cy="694" r="118"/>
+    <rect x="492" y="232" width="46" height="440" rx="23"/>
+    <path d="M516 236 C 562 250, 700 300, 722 410 C 736 480, 700 540, 650 574 C 690 510, 688 440, 640 400 C 600 368, 560 360, 538 356 Z"/>
+  </g>
+</g><rect width="1024" height="1024" filter="url(#grain)" opacity=".35" style="mix-blend-mode:overlay"/></svg>

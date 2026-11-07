@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<defs>
+<filter id="sh" x="-30%" y="-30%" width="160%" height="160%">
+  <feDropShadow dx="0" dy="22" stdDeviation="26" flood-color="#000" flood-opacity=".28"/>
+</filter>
+<filter id="grain" x="0" y="0" width="100%" height="100%">
+  <feTurbulence type="fractalNoise" baseFrequency=".85" numOctaves="2" stitchTiles="stitch"/>
+  <feColorMatrix values="0 0 0 0 .5  0 0 0 0 .5  0 0 0 0 .5  0 0 0 .55 0"/>
+</filter>
+<filter id="blur120" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="120"/></filter>
+<filter id="blur60" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="60"/></filter>
+<filter id="blur24" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="24"/></filter>
+<filter id="blur10" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="10"/></filter>
+<radialGradient id="shine" cx="22%" cy="12%" r="80%">
+  <stop offset="0" stop-color="#fff" stop-opacity=".34"/><stop offset=".55" stop-color="#fff" stop-opacity="0"/>
+</radialGradient>
+<radialGradient id="vign" cx="50%" cy="45%" r="75%">
+  <stop offset=".6" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".35"/>
+</radialGradient>
+
+<radialGradient id="bg" cx="50%" cy="30%" r="90%"><stop offset="0" stop-color="#2a2433"/><stop offset="1" stop-color="#0b0a0e"/></radialGradient>
+<radialGradient id="disc" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#1b1b1f"/><stop offset="1" stop-color="#0d0d10"/></radialGradient>
+<linearGradient id="lab" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff3b6b"/><stop offset="1" stop-color="#5b2bd9"/></linearGradient>
+<linearGradient id="sheen" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".22"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+<clipPath id="dc"><circle cx="512" cy="512" r="420"/></clipPath></defs>
+<rect width="1024" height="1024" fill="url(#bg)"/>
+<circle cx="512" cy="540" r="420" fill="#000" opacity=".5" filter="url(#blur60)"/>
+<circle cx="512" cy="512" r="420" fill="url(#disc)"/>
+<circle cx="512" cy="512" r="200" fill="none" stroke="#fff" stroke-opacity="0.09" stroke-width="3"/><circle cx="512" cy="512" r="209" fill="none" stroke="#fff" stroke-opacity="0.05" stroke-width="3"/><circle cx="512" cy="512" r="218" fill="none" stroke="#fff" stroke-opacity="0.05" stroke-width="3"/><circle cx="512" cy="512" r="227" fill="none" stroke="#fff" stroke-opacity="0.09" stroke-width="3"/><circle cx="512" cy="512" r="236" fill="none" stroke="#fff" stroke-opacity="0.05" stroke-width="3"/><circle cx="512" cy="512" r="245" fill="none" stroke="#fff" stroke-opacity="0.05" stroke-width="3"/><circle cx="512" cy="512" r="254" fill="none" stroke="#fff" stroke-opacity="0.09" stroke-width="3"/><circle cx="512" cy="512" r="263" fill="none" stroke="#fff" stroke-opacity="0.05" stroke-width="3"/><circle cx="512" cy="512" r="272" fill="none" stroke="#fff" stroke-opacity="0.05" stroke-width="3"/><circle cx="512" cy="512" r="281" fill="none" stroke="#fff" stroke-opacity="0.09" stroke-width="3"/><circle cx="512" cy="512" r="290" fill="none" stroke="#fff" stroke-opacity="0.05" stroke-width="3"/><circle cx="512" cy="512" r="299" fill="none" stroke="#fff" stroke-opacity="0.05" stroke-width="3"/><circle cx="512" cy="512" r="308" fill="none" stroke="#fff" stroke-opacity="0.09" stroke-width="3"/><circle cx="512" cy="512" r="317" fill="none" stroke="#fff" stroke-opacity="0.05" stroke-width="3"/><circle cx="512" cy="512" r="326" fill="none" stroke="#fff" stroke-opacity="0.05" stroke-width="3"/><circle cx="512" cy="512" r="335" fill="none" stroke="#fff" stroke-opacity="0.09" stroke-width="3"/><circle cx="512" cy="512" r="344" fill="none" stroke="#fff" stroke-opacity="0.05" stroke-width="3"/><circle cx="512" cy="512" r="353" fill="none" stroke="#fff" stroke-opacity="0.05" stroke-width="3"/><circle cx="512" cy="512" r="362" fill="none" stroke="#fff" stroke-opacity="0.09" stroke-width="3"/><circle cx="512" cy="512" r="371" fill="none" stroke="#fff" stroke-opacity="0.05" stroke-width="3"/><circle cx="512" cy="512" r="380" fill="none" stroke="#fff" stroke-opacity="0.05" stroke-width="3"/><circle cx="512" cy="512" r="389" fill="none" stroke="#fff" stroke-opacity="0.09" stroke-width="3"/><circle cx="512" cy="512" r="398" fill="none" stroke="#fff" stroke-opacity="0.05" stroke-width="3"/>
+<g clip-path="url(#dc)">
+  <path d="M512 512 L 90 160 A 560 560 0 0 1 300 70 Z" fill="url(#sheen)" opacity=".9"/>
+  <path d="M512 512 L 934 864 A 560 560 0 0 1 724 954 Z" fill="url(#sheen)" opacity=".6"/>
+</g>
+<circle cx="512" cy="512" r="170" fill="url(#lab)"/>
+<circle cx="512" cy="512" r="170" fill="url(#shine)"/>
+<g transform="translate(512 512) scale(.28) translate(-512 -512)">
+<g transform="translate(36 -22)" >
+  <g fill="none" stroke="#fff" stroke-linecap="round">
+    <path d="M357.8 862.7 A182 182 0 0 1 304.2 558.7" stroke-width="26" stroke-opacity="0.6"/>
+    <path d="M308.6 914.7 A250 250 0 0 1 240.2 526.7" stroke-width="22" stroke-opacity="0.35"/>
+  </g>
+  <g fill="#fff" >
+    <circle cx="426" cy="694" r="118"/>
+    <rect x="492" y="232" width="46" height="440" rx="23"/>
+    <path d="M516 236 C 562 250, 700 300, 722 410 C 736 480, 700 540, 650 574 C 690 510, 688 440, 640 400 C 600 368, 560 360, 538 356 Z"/>
+  </g>
+</g></g>
+<circle cx="512" cy="512" r="14" fill="#0b0a0e"/><rect width="1024" height="1024" filter="url(#grain)" opacity=".35" style="mix-blend-mode:overlay"/></svg>

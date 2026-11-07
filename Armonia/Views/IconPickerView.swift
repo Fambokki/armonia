@@ -12,15 +12,17 @@ struct IconPickerView: View {
 
     private let options: [AppIconOption] = [
         .init(id: "AppIcon", title: "Classica"),
-        .init(id: "AppIcon-Notte", title: "Notte"),
-        .init(id: "AppIcon-Oceano", title: "Oceano"),
+        .init(id: "AppIcon-Aurora", title: "Aurora"),
         .init(id: "AppIcon-Tramonto", title: "Tramonto"),
-        .init(id: "AppIcon-Menta", title: "Menta"),
-        .init(id: "AppIcon-Minimal", title: "Minimal"),
+        .init(id: "AppIcon-Oceano", title: "Oceano"),
+        .init(id: "AppIcon-Notte", title: "Notte"),
+        .init(id: "AppIcon-Vetro", title: "Vetro"),
         .init(id: "AppIcon-Vinile", title: "Vinile"),
         .init(id: "AppIcon-Onda", title: "Onda"),
         .init(id: "AppIcon-Neon", title: "Neon"),
-        .init(id: "AppIcon-Monogramma", title: "Monogramma"),
+        .init(id: "AppIcon-Carta", title: "Carta"),
+        .init(id: "AppIcon-Oro", title: "Oro"),
+        .init(id: "AppIcon-Menta", title: "Menta"),
     ]
 
     @State private var current: String? = UIApplication.shared.alternateIconName
