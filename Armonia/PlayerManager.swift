@@ -16,6 +16,11 @@ final class PlayerManager: ObservableObject {
     @Published private(set) var duration: Double = 0
     @Published var errorMessage: String?
     @Published var showFullPlayer = false
+    /// Qualità del brano in riproduzione, es. "AAC 128 kbps" o "FLAC · locale".
+    @Published private(set) var qualityLabel: String = ""
+    @Published var streamLowQuality: Bool = UserDefaults.standard.bool(forKey: "streamLowQuality") {
+        didSet { UserDefaults.standard.set(streamLowQuality, forKey: "streamLowQuality") }
+    }
     @Published var autoRadio: Bool = UserDefaults.standard.object(forKey: "autoRadio") as? Bool ?? true {
         didSet { UserDefaults.standard.set(autoRadio, forKey: "autoRadio") }
     }
@@ -181,14 +186,34 @@ final class PlayerManager: ObservableObject {
         currentTime = 0
         duration = 0
         errorMessage = nil
+        qualityLabel = ""
         loadArtwork(for: track)
         updateNowPlaying()
-        library?.addRecent(track)
+        if !track.isLocal { library?.addRecent(track) }
 
+        // Brano scaricato o file importato: si riproduce dal telefono, senza rete.
+        if let file = Storage.playableFile(for: track) {
+            let ext = file.pathExtension.uppercased()
+            qualityLabel = track.isLocal ? "\(ext == "M4A" ? "ALAC/AAC" : ext) · file locale" : "Scaricato"
+            let item = AVPlayerItem(url: file)
+            observe(item)
+            player.replaceCurrentItem(with: item)
+            try? AVAudioSession.sharedInstance().setActive(true)
+            player.play()
+            if autoRadio && !track.isLocal && index >= queue.count - 2 { extendWithRadio(from: track) }
+            return
+        }
+        if track.isLocal {
+            handleFailure("File non trovato sul telefono.")
+            return
+        }
+
+        let low = streamLowQuality
         loadTask = Task { [weak self] in
             do {
-                let stream = try await Innertube.shared.stream(for: track.id)
+                let stream = try await Innertube.shared.stream(for: track.id, lowQuality: low)
                 guard !Task.isCancelled, let self, self.current?.id == track.id else { return }
+                self.qualityLabel = stream.label
                 let asset = AVURLAsset(url: stream.url,
                                        options: ["AVURLAssetHTTPHeaderFieldsKey": ["User-Agent": stream.userAgent]])
                 let item = AVPlayerItem(asset: asset)
@@ -250,11 +275,19 @@ final class PlayerManager: ObservableObject {
 
     private func prefetchNext() {
         guard queue.indices.contains(index + 1) else { return }
-        let id = queue[index + 1].id
-        Task.detached(priority: .utility) { _ = try? await Innertube.shared.stream(for: id) }
+        let next = queue[index + 1]
+        guard Storage.playableFile(for: next) == nil, !next.isLocal else { return }
+        let id = next.id
+        let low = streamLowQuality
+        Task.detached(priority: .utility) { _ = try? await Innertube.shared.stream(for: id, lowQuality: low) }
     }
 
     private func extendWithRadio(from seed: Track) {
+        if seed.isLocal {
+            // Niente radio per i file locali: a fine coda si ferma.
+            if pendingAdvance { pendingAdvance = false; player.pause(); seek(to: 0) }
+            return
+        }
         guard radioTask == nil else { return }
         let gen = generation
         radioTask = Task { [weak self] in

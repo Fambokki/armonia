@@ -94,6 +94,15 @@ struct NowPlayingView: View {
 
                 progress
 
+                if !player.qualityLabel.isEmpty {
+                    Text(player.qualityLabel)
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(.white.opacity(0.12), in: Capsule())
+                        .foregroundStyle(.secondary)
+                }
+
                 controls
 
                 if let e = player.errorMessage {

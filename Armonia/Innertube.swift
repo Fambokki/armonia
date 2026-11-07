@@ -8,16 +8,23 @@ import Foundation
 struct StreamInfo: Sendable {
     let url: URL
     let userAgent: String
+    /// Dimensione in byte (nota solo per i file diretti, non per HLS).
+    var contentLength: Int64?
+    var isHLS = false
+    /// Descrizione della qualità, es. "AAC 128 kbps".
+    var label = ""
 }
 
 enum InnertubeError: LocalizedError {
     case http(Int)
     case unplayable(String)
+    case notDownloadable
 
     var errorDescription: String? {
         switch self {
         case .http(let code): return "Il server ha risposto con errore \(code)."
         case .unplayable(let reason): return "Brano non riproducibile: \(reason)"
+        case .notDownloadable: return "Questo brano è disponibile solo in streaming."
         }
     }
 }
@@ -101,16 +108,20 @@ actor Innertube {
     }
 
     /// Verifica che il link audio risponda davvero (YouTube a volte dà il link ma poi risponde 403).
-    private func probe(_ url: URL, userAgent: String) async -> Int {
+    /// Restituisce il codice HTTP e, se noto, la dimensione totale del file.
+    private func probe(_ url: URL, userAgent: String) async -> (code: Int, total: Int64?) {
         var req = URLRequest(url: url, timeoutInterval: 10)
         req.setValue("bytes=0-1", forHTTPHeaderField: "Range")
         req.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-        guard let (_, resp) = try? await URLSession.shared.data(for: req) else { return -1 }
-        return (resp as? HTTPURLResponse)?.statusCode ?? -1
+        guard let (_, resp) = try? await URLSession.shared.data(for: req),
+              let http = resp as? HTTPURLResponse else { return (-1, nil) }
+        var total: Int64?
+        if let cr = http.value(forHTTPHeaderField: "Content-Range"),
+           let slash = cr.lastIndex(of: "/") {
+            total = Int64(cr[cr.index(after: slash)...])
+        }
+        return (http.statusCode, total)
     }
-
-    private var visitorData: String?
-    private var streamCache: [String: CachedStream] = [:]
 
     // MARK: - Ricerca
 
@@ -166,11 +177,16 @@ actor Innertube {
 
     // MARK: - Flusso audio
 
-    func stream(for videoId: String) async throws -> StreamInfo {
-        if let cached = streamCache[videoId], Date().timeIntervalSince(cached.date) < 3600 {
+    /// - lowQuality: sceglie il bitrate più basso (risparmio dati).
+    /// - forDownload: esclude HLS, che non si può salvare come file singolo.
+    func stream(for videoId: String, lowQuality: Bool = false, forDownload: Bool = false) async throws -> StreamInfo {
+        let cacheKey = videoId + (lowQuality ? "-low" : "") + (forDownload ? "-dl" : "")
+        if let cached = streamCache[cacheKey], Date().timeIntervalSince(cached.date) < 3600 {
             return cached.info
         }
         await loadRemoteConfigIfNeeded()
+
+        struct Candidate { let url: URL; let label: String; let isHLS: Bool; let length: Int64? }
 
         var reasons: [String] = []
         for c in playerClients {
@@ -206,28 +222,47 @@ actor Innertube {
 
                 // Candidati in ordine: audio AAC (m4a), video+audio mp4, HLS.
                 let bitrate: ([String: Any]) -> Int = { ($0["bitrate"] as? Int) ?? 0 }
+                let kbps: ([String: Any]) -> Int = { f in
+                    let avg = (f["averageBitrate"] as? Int) ?? bitrate(f)
+                    return Int((Double(avg) / 1000).rounded())
+                }
+                let length: ([String: Any]) -> Int64? = { f in
+                    (f["contentLength"] as? String).flatMap { Int64($0) }
+                }
                 let adaptive = (sd["adaptiveFormats"] as? [[String: Any]]) ?? []
                 let muxed = (sd["formats"] as? [[String: Any]]) ?? []
-                var candidates: [URL] = []
+                var candidates: [Candidate] = []
                 candidates += adaptive
                     .filter { (($0["mimeType"] as? String) ?? "").hasPrefix("audio/mp4") }
-                    .sorted { bitrate($0) > bitrate($1) }
-                    .compactMap { ($0["url"] as? String).flatMap(URL.init(string:)) }
+                    .sorted { lowQuality ? bitrate($0) < bitrate($1) : bitrate($0) > bitrate($1) }
+                    .compactMap { f in
+                        (f["url"] as? String).flatMap(URL.init(string:)).map {
+                            Candidate(url: $0, label: "AAC \(kbps(f)) kbps", isHLS: false, length: length(f))
+                        }
+                    }
                 candidates += muxed
                     .filter { (($0["mimeType"] as? String) ?? "").hasPrefix("video/mp4") }
-                    .compactMap { ($0["url"] as? String).flatMap(URL.init(string:)) }
-                if let h = sd["hlsManifestUrl"] as? String, let u = URL(string: h) { candidates.append(u) }
+                    .compactMap { f in
+                        (f["url"] as? String).flatMap(URL.init(string:)).map {
+                            Candidate(url: $0, label: "AAC (da video)", isHLS: false, length: length(f))
+                        }
+                    }
+                if !forDownload, let h = sd["hlsManifestUrl"] as? String, let u = URL(string: h) {
+                    candidates.append(Candidate(url: u, label: "HLS", isHLS: true, length: nil))
+                }
 
                 guard !candidates.isEmpty else {
                     reasons.append("\(c.name): flusso protetto")
                     continue
                 }
                 var codes: [Int] = []
-                for url in candidates.prefix(3) {
-                    let code = await probe(url, userAgent: c.userAgent)
+                for cand in candidates.prefix(3) {
+                    let (code, total) = await probe(cand.url, userAgent: c.userAgent)
                     if code == 200 || code == 206 {
-                        let info = StreamInfo(url: url, userAgent: c.userAgent)
-                        streamCache[videoId] = CachedStream(info: info, date: Date())
+                        let info = StreamInfo(url: cand.url, userAgent: c.userAgent,
+                                              contentLength: total ?? cand.length,
+                                              isHLS: cand.isHLS, label: cand.label)
+                        streamCache[cacheKey] = CachedStream(info: info, date: Date())
                         return info
                     }
                     codes.append(code)
@@ -237,7 +272,29 @@ actor Innertube {
                 reasons.append("\(c.name): \(error.localizedDescription)")
             }
         }
+        if forDownload && reasons.isEmpty { throw InnertubeError.notDownloadable }
         throw InnertubeError.unplayable(reasons.isEmpty ? "nessun client disponibile" : reasons.joined(separator: " · "))
+    }
+
+    // MARK: - Ricerca completa (artisti, album, brani, playlist)
+
+    func searchAll(_ query: String) async throws -> [BrowseSection] {
+        await loadRemoteConfigIfNeeded()
+        let body: [String: Any] = ["context": musicContext(), "query": query]
+        let json = try await post("https://music.youtube.com/youtubei/v1/search?prettyPrint=false",
+                                  body: body, headers: musicHeaders())
+        return JSON.sections(json, carousels: false)
+    }
+
+    // MARK: - Pagine (artista, album, playlist)
+
+    func browse(_ target: BrowseTarget) async throws -> BrowsePage {
+        await loadRemoteConfigIfNeeded()
+        var body: [String: Any] = ["context": musicContext(), "browseId": target.browseId]
+        if let p = target.params { body["params"] = p }
+        let json = try await post("https://music.youtube.com/youtubei/v1/browse?prettyPrint=false",
+                                  body: body, headers: musicHeaders())
+        return JSON.page(json, fallbackTitle: target.title, browseId: target.browseId)
     }
 
     // MARK: - Rete

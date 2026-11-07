@@ -2,19 +2,42 @@ import Foundation
 import Combine
 import SwiftUI
 
-/// Libreria locale: preferiti, ascolti recenti e playlist, salvati in un file JSON sul telefono.
+/// Libreria locale: preferiti, recenti, playlist, brani scaricati e file importati,
+/// salvati in un file JSON sul telefono.
 @MainActor
 final class LibraryStore: ObservableObject {
     @Published var favorites: [Track] = [] { didSet { save() } }
     @Published var recents: [Track] = [] { didSet { save() } }
     @Published var playlists: [Playlist] = [] { didSet { save() } }
+    @Published var downloads: [Track] = [] { didSet { save() } }
+    @Published var locals: [Track] = [] { didSet { save() } }
 
     let fileURL = URL.documentsDirectory.appendingPathComponent("libreria.json")
 
     private struct Snapshot: Codable {
-        var favorites: [Track]
-        var recents: [Track]
-        var playlists: [Playlist]
+        var favorites: [Track] = []
+        var recents: [Track] = []
+        var playlists: [Playlist] = []
+        var downloads: [Track] = []
+        var locals: [Track] = []
+
+        init(favorites: [Track], recents: [Track], playlists: [Playlist], downloads: [Track], locals: [Track]) {
+            self.favorites = favorites
+            self.recents = recents
+            self.playlists = playlists
+            self.downloads = downloads
+            self.locals = locals
+        }
+
+        // Legge anche i file salvati dalle versioni precedenti (senza download e file locali).
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            favorites = try c.decodeIfPresent([Track].self, forKey: .favorites) ?? []
+            recents = try c.decodeIfPresent([Track].self, forKey: .recents) ?? []
+            playlists = try c.decodeIfPresent([Playlist].self, forKey: .playlists) ?? []
+            downloads = try c.decodeIfPresent([Track].self, forKey: .downloads) ?? []
+            locals = try c.decodeIfPresent([Track].self, forKey: .locals) ?? []
+        }
     }
 
     private var isLoading = false
@@ -29,11 +52,15 @@ final class LibraryStore: ObservableObject {
         favorites = s.favorites
         recents = s.recents
         playlists = s.playlists
+        // Tiene solo i download il cui file esiste ancora.
+        downloads = s.downloads.filter { Storage.playableFile(for: $0) != nil }
+        locals = s.locals.filter { Storage.playableFile(for: $0) != nil }
     }
 
     private func save() {
         guard !isLoading else { return }
-        let s = Snapshot(favorites: favorites, recents: recents, playlists: playlists)
+        let s = Snapshot(favorites: favorites, recents: recents, playlists: playlists,
+                         downloads: downloads, locals: locals)
         if let data = try? JSONEncoder().encode(s) {
             try? data.write(to: fileURL, options: .atomic)
         }
@@ -59,11 +86,46 @@ final class LibraryStore: ObservableObject {
         recents = list
     }
 
+    // MARK: - Download e file locali
+
+    func isDownloaded(_ t: Track) -> Bool {
+        t.isLocal || downloads.contains { $0.id == t.id }
+    }
+
+    func markDownloaded(_ t: Track) {
+        guard !downloads.contains(where: { $0.id == t.id }) else { return }
+        downloads.insert(t, at: 0)
+    }
+
+    func removeDownload(_ t: Track) {
+        try? FileManager.default.removeItem(at: Storage.downloadURL(for: t.id))
+        downloads.removeAll { $0.id == t.id }
+    }
+
+    func removeAllDownloads() {
+        for t in downloads { try? FileManager.default.removeItem(at: Storage.downloadURL(for: t.id)) }
+        downloads = []
+    }
+
+    func addLocal(_ t: Track) {
+        locals.removeAll { $0.id == t.id }
+        locals.insert(t, at: 0)
+    }
+
+    func removeLocal(_ t: Track) {
+        if let u = Storage.playableFile(for: t) { try? FileManager.default.removeItem(at: u) }
+        if let art = t.artworkURL, art.isFileURL { try? FileManager.default.removeItem(at: art) }
+        locals.removeAll { $0.id == t.id }
+        favorites.removeAll { $0.id == t.id }
+        recents.removeAll { $0.id == t.id }
+        for i in playlists.indices { playlists[i].tracks.removeAll { $0.id == t.id } }
+    }
+
     // MARK: - Playlist
 
     @discardableResult
-    func createPlaylist(_ name: String) -> UUID {
-        let p = Playlist(name: name.trimmingCharacters(in: .whitespaces))
+    func createPlaylist(_ name: String, tracks: [Track] = []) -> UUID {
+        let p = Playlist(name: name.trimmingCharacters(in: .whitespaces), tracks: tracks)
         playlists.append(p)
         return p.id
     }
@@ -88,6 +150,8 @@ final class LibraryStore: ObservableObject {
         switch source {
         case .favorites: return favorites
         case .recents: return recents
+        case .downloads: return downloads
+        case .locals: return locals
         case .playlist(let id): return playlists.first { $0.id == id }?.tracks ?? []
         }
     }
@@ -96,6 +160,8 @@ final class LibraryStore: ObservableObject {
         switch source {
         case .favorites: return "Preferiti"
         case .recents: return "Ascoltati di recente"
+        case .downloads: return "Scaricati"
+        case .locals: return "File importati"
         case .playlist(let id): return playlists.first { $0.id == id }?.name ?? "Playlist"
         }
     }
@@ -104,6 +170,10 @@ final class LibraryStore: ObservableObject {
         switch source {
         case .favorites: favorites.remove(atOffsets: offsets)
         case .recents: recents.remove(atOffsets: offsets)
+        case .downloads:
+            for t in offsets.map({ downloads[$0] }) { removeDownload(t) }
+        case .locals:
+            for t in offsets.map({ locals[$0] }) { removeLocal(t) }
         case .playlist(let id):
             guard let i = playlists.firstIndex(where: { $0.id == id }) else { return }
             playlists[i].tracks.remove(atOffsets: offsets)

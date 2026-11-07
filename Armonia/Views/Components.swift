@@ -32,6 +32,7 @@ struct TrackRow: View {
 
     @EnvironmentObject private var player: PlayerManager
     @EnvironmentObject private var library: LibraryStore
+    @EnvironmentObject private var downloads: DownloadManager
     @State private var showPlaylistPicker = false
 
     private var isCurrent: Bool { player.current?.id == track.id }
@@ -57,6 +58,7 @@ struct TrackRow: View {
                         .foregroundStyle(.tint)
                         .symbolEffect(.variableColor.iterative)
                 }
+                DownloadBadge(track: track)
             }
             .contentShape(Rectangle())
             .onTapGesture(perform: onTap)
@@ -88,6 +90,69 @@ struct TrackRow: View {
                 : Label("Aggiungi ai preferiti", systemImage: "heart")
         }
         Button { showPlaylistPicker = true } label: { Label("Aggiungi a playlist", systemImage: "music.note.list") }
+        Divider()
+        if track.isLocal {
+            Button(role: .destructive) { library.removeLocal(track) } label: {
+                Label("Elimina file", systemImage: "trash")
+            }
+        } else if library.isDownloaded(track) {
+            Button(role: .destructive) { library.removeDownload(track) } label: {
+                Label("Rimuovi download", systemImage: "trash")
+            }
+        } else if downloads.isQueued(track) {
+            Button { downloads.cancel(track) } label: { Label("Annulla download", systemImage: "xmark.circle") }
+        } else {
+            Button { downloads.download([track]) } label: { Label("Scarica", systemImage: "arrow.down.circle") }
+        }
+    }
+}
+
+/// Icona accanto ai brani: scaricato, in download (con avanzamento) o errore.
+struct DownloadBadge: View {
+    let track: Track
+    @EnvironmentObject private var library: LibraryStore
+    @EnvironmentObject private var downloads: DownloadManager
+
+    var body: some View {
+        if let p = downloads.progress[track.id] {
+            ProgressView(value: p)
+                .progressViewStyle(.circular)
+                .controlSize(.mini)
+                .frame(width: 18, height: 18)
+        } else if track.isLocal {
+            Image(systemName: "internaldrive").font(.caption).foregroundStyle(.secondary)
+        } else if library.isDownloaded(track) {
+            Image(systemName: "arrow.down.circle.fill").font(.caption).foregroundStyle(.tint)
+        } else if downloads.failures[track.id] != nil {
+            Image(systemName: "exclamationmark.circle").font(.caption).foregroundStyle(.orange)
+        }
+    }
+}
+
+/// Pulsante "Scarica tutto" per album e playlist.
+struct DownloadAllButton: View {
+    let tracks: [Track]
+    @EnvironmentObject private var library: LibraryStore
+    @EnvironmentObject private var downloads: DownloadManager
+
+    private var missing: [Track] { tracks.filter { !$0.isLocal && !library.isDownloaded($0) } }
+    private var running: Bool { tracks.contains { downloads.isQueued($0) } }
+
+    var body: some View {
+        if !tracks.isEmpty {
+            if running {
+                Button { tracks.forEach { downloads.cancel($0) } } label: {
+                    Label("Download in corso…", systemImage: "xmark.circle")
+                }
+            } else if missing.isEmpty {
+                Label("Tutto scaricato", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            } else {
+                Button { downloads.download(missing) } label: {
+                    Label("Scarica (\(missing.count))", systemImage: "arrow.down.circle")
+                }
+            }
+        }
     }
 }
 

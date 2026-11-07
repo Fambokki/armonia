@@ -5,7 +5,7 @@ struct SearchView: View {
     @EnvironmentObject private var library: LibraryStore
 
     @State private var query = ""
-    @State private var results: [Track] = []
+    @State private var sections: [BrowseSection] = []
     @State private var isSearching = false
     @State private var error: String?
     @State private var searchTask: Task<Void, Never>?
@@ -22,31 +22,33 @@ struct SearchView: View {
                     .foregroundStyle(.secondary)
             }
 
-            if query.isEmpty && results.isEmpty && !library.recents.isEmpty {
+            if query.isEmpty && sections.isEmpty && !library.recents.isEmpty {
                 Section("Ascoltati di recente") {
-                    ForEach(Array(library.recents.prefix(15).enumerated()), id: \.offset) { i, t in
-                        TrackRow(track: t) { player.play(Array(library.recents.prefix(15)), startAt: i) }
+                    let recents = Array(library.recents.prefix(15))
+                    ForEach(Array(recents.enumerated()), id: \.offset) { i, t in
+                        TrackRow(track: t) { player.play(recents, startAt: i) }
                     }
                 }
             } else {
-                ForEach(results) { t in
-                    TrackRow(track: t) { player.startRadio(from: t) }
+                ForEach(sections) { s in
+                    SectionView(section: s, isSearch: true)
                 }
             }
         }
         .listStyle(.plain)
         .navigationTitle("Cerca")
+        .navigationDestination(for: BrowseTarget.self) { BrowsePageView(target: $0) }
         .searchable(text: $query, prompt: "Brani, artisti, album")
         .onSubmit(of: .search) { runSearch() }
         .onChange(of: query) { _, newValue in
             if newValue.isEmpty {
                 searchTask?.cancel()
-                results = []
+                sections = []
                 error = nil
             }
         }
         .overlay {
-            if query.isEmpty && results.isEmpty && library.recents.isEmpty {
+            if query.isEmpty && sections.isEmpty && library.recents.isEmpty {
                 ContentUnavailableView("Cerca la tua musica",
                                        systemImage: "music.magnifyingglass",
                                        description: Text("Tocca un brano per ascoltarlo: la coda si riempie da sola con brani simili."))
@@ -62,9 +64,15 @@ struct SearchView: View {
         error = nil
         searchTask = Task {
             do {
-                let found = try await Innertube.shared.search(q)
+                var found = try await Innertube.shared.searchAll(q)
+                // Se la ricerca completa non dà nulla di utile, ripiega sui soli brani.
+                if found.allSatisfy({ $0.items.isEmpty }) {
+                    let songs = try await Innertube.shared.search(q)
+                    found = songs.isEmpty ? [] : [BrowseSection(title: "Brani", items: songs.map { .track($0) },
+                                                                more: nil, isCarousel: false)]
+                }
                 guard !Task.isCancelled else { return }
-                results = found
+                sections = found
                 if found.isEmpty { error = "Nessun risultato." }
             } catch {
                 guard !Task.isCancelled else { return }

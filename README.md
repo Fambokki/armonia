@@ -4,14 +4,19 @@ Client musicale personale per iPhone, in stile BitChord: cerca e ascolta il cata
 
 > Uso personale. Non è affiliato a YouTube/Google e non può andare sull'App Store.
 
-## Cosa fa (v0.1)
+## Cosa fa (v0.2)
 
-- Ricerca di brani
+- Ricerca completa: brani, artisti, album e playlist
+- Pagine artista (brani più ascoltati, album, singoli, artisti simili) e album
 - Riproduzione in background, controlli nella schermata di blocco, Centro di Controllo e cuffie
 - Radio automatica: tocchi un brano e la coda si riempie con brani simili
-- Coda modificabile (riordina, elimina, salta)
-- Preferiti, ascoltati di recente, playlist locali (esportabili in JSON)
+- Download per l'ascolto offline (brani, album, playlist)
+- Import delle playlist di Spotify (link pubblico o CSV di exportify.app)
+- Import dei tuoi file FLAC/ALAC/MP3 dall'app File, riprodotti in qualità originale
+- Coda modificabile, preferiti, recenti, playlist locali (esportabili in JSON)
 - Uscita AirPlay / Bluetooth
+
+YouTube Music non offre audio lossless: lo streaming e i download sono AAC (di solito 128 kbps).
 
 ## Come si compila (senza Mac)
 
