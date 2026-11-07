@@ -28,19 +28,25 @@ struct RootView: View {
     var body: some View {
         TabView {
             NavigationStack { HomeView() }
-                .safeAreaInset(edge: .bottom) { MiniPlayerBar() }
                 .tabItem { Label("Home", systemImage: "house.fill") }
 
             NavigationStack { SearchView() }
-                .safeAreaInset(edge: .bottom) { MiniPlayerBar() }
                 .tabItem { Label("Cerca", systemImage: "magnifyingglass") }
 
             NavigationStack { LibraryView() }
-                .safeAreaInset(edge: .bottom) { MiniPlayerBar() }
                 .tabItem { Label("Libreria", systemImage: "square.stack.fill") }
         }
         .fullScreenCover(isPresented: $player.showFullPlayer) {
             NowPlayingView()
         }
+    }
+}
+
+extension View {
+    /// Mostra il mini player in fondo alla schermata e lascia lo spazio per scorrere fino all'ultimo elemento.
+    /// Va applicato a ogni schermata con una lista, non al NavigationStack: così l'ultima riga
+    /// resta sempre raggiungibile anche nelle pagine aperte dentro la navigazione.
+    func withMiniPlayer() -> some View {
+        safeAreaInset(edge: .bottom, spacing: 0) { MiniPlayerBar() }
     }
 }

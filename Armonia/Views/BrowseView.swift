@@ -30,6 +30,7 @@ struct BrowsePageView: View {
         }
         .listStyle(.plain)
         .navigationTitle(page?.title ?? target.title)
+        .withMiniPlayer()
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
         .refreshable { await load() }

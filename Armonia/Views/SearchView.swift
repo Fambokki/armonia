@@ -37,6 +37,7 @@ struct SearchView: View {
         }
         .listStyle(.plain)
         .navigationTitle("Cerca")
+        .withMiniPlayer()
         .navigationDestination(for: BrowseTarget.self) { BrowsePageView(target: $0) }
         .searchable(text: $query, prompt: "Brani, artisti, album")
         .onSubmit(of: .search) { runSearch() }

@@ -71,6 +71,7 @@ struct LibraryView: View {
             }
         }
         .navigationTitle("Libreria")
+        .withMiniPlayer()
         .navigationDestination(for: BrowseTarget.self) { BrowsePageView(target: $0) }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
@@ -311,6 +312,7 @@ struct TrackListScreen: View {
         .listStyle(.plain)
         .environment(\.editMode, $editMode)
         .navigationTitle(library.title(for: source))
+        .withMiniPlayer()
         .searchable(text: $filter, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Cerca in questa lista")
         .overlay {
             if allTracks.isEmpty {

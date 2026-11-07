@@ -72,6 +72,7 @@ struct HomeView: View {
         }
         .listStyle(.plain)
         .navigationTitle(greeting)
+        .withMiniPlayer()
         .navigationDestination(for: BrowseTarget.self) { BrowsePageView(target: $0) }
         .task {
             if feed == nil { await load() }
