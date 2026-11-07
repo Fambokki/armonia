@@ -177,6 +177,7 @@ struct QuickPickCell: View {
     let siblings: [Track]
 
     @EnvironmentObject private var player: PlayerManager
+    @EnvironmentObject private var nav: Navigator
 
     var body: some View {
         switch item {
@@ -205,7 +206,7 @@ struct QuickPickCell: View {
                 }
             }
         case .collection(let c):
-            NavigationLink(value: c.target) {
+            Button { nav.open(c.target) } label: {
                 HStack(spacing: 10) {
                     ArtworkView(url: c.artworkURL, corner: c.kind == .artist ? 25 : 4).frame(width: 50, height: 50)
                     VStack(alignment: .leading, spacing: 2) {
@@ -245,11 +246,12 @@ struct CarouselCard: View {
     let siblings: [Track]
 
     @EnvironmentObject private var player: PlayerManager
+    @EnvironmentObject private var nav: Navigator
 
     var body: some View {
         switch item {
         case .collection(let c):
-            NavigationLink(value: c.target) {
+            Button { nav.open(c.target) } label: {
                 card(url: c.artworkURL, title: c.title, subtitle: c.subtitle, round: c.kind == .artist)
             }
             .buttonStyle(.plain)

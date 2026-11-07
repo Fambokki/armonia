@@ -72,7 +72,6 @@ struct LibraryView: View {
         }
         .navigationTitle("Libreria")
         .withMiniPlayer()
-        .navigationDestination(for: BrowseTarget.self) { BrowsePageView(target: $0) }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button { showSettings = true } label: { Image(systemName: "gearshape") }

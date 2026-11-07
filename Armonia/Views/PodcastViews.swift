@@ -3,6 +3,7 @@ import SwiftUI
 /// Scheda Podcast: podcast seguiti, nuovi episodi, classifica italiana e ricerca.
 struct PodcastsView: View {
     @EnvironmentObject private var store: PodcastStore
+    @EnvironmentObject private var nav: Navigator
 
     @State private var query = ""
     @State private var results: [PodcastShow] = []
@@ -20,7 +21,7 @@ struct PodcastsView: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             LazyHStack(alignment: .top, spacing: 14) {
                                 ForEach(store.subscriptions) { show in
-                                    NavigationLink { PodcastDetailView(show: show) } label: {
+                                    Button { nav.open(show) } label: {
                                         ShowCard(show: show)
                                     }
                                     .buttonStyle(.plain)

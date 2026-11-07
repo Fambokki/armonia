@@ -5,6 +5,7 @@ import SwiftUI
 struct HomeView: View {
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var player: PlayerManager
+    @EnvironmentObject private var nav: Navigator
 
     @State private var feed: HomeFeed?
     @State private var baseChips: [HomeChip] = []
@@ -73,7 +74,6 @@ struct HomeView: View {
         .listStyle(.plain)
         .navigationTitle(greeting)
         .withMiniPlayer()
-        .navigationDestination(for: BrowseTarget.self) { BrowsePageView(target: $0) }
         .task {
             if feed == nil { await load() }
         }
@@ -140,17 +140,17 @@ struct HomeView: View {
             ForEach(shortcutTiles) { tile in
                 switch tile {
                 case .favorites:
-                    NavigationLink { TrackListScreen(source: .favorites) } label: {
+                    Button { nav.open(TrackSource.favorites) } label: {
                         tileLabel(title: "Preferiti", symbol: "heart.fill", url: nil)
                     }
                     .buttonStyle(.plain)
                 case .downloads:
-                    NavigationLink { TrackListScreen(source: .downloads) } label: {
+                    Button { nav.open(TrackSource.downloads) } label: {
                         tileLabel(title: "Scaricati", symbol: "arrow.down.circle.fill", url: nil)
                     }
                     .buttonStyle(.plain)
                 case .playlist(let p):
-                    NavigationLink { TrackListScreen(source: .playlist(p.id)) } label: {
+                    Button { nav.open(TrackSource.playlist(p.id)) } label: {
                         tileLabel(title: p.name, symbol: "music.note.list", url: p.tracks.first?.artworkURL)
                     }
                     .buttonStyle(.plain)
