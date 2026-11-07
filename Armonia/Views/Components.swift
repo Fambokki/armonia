@@ -82,7 +82,9 @@ struct TrackRow: View {
     private var trackActions: some View {
         Button { player.playNext(track) } label: { Label("Riproduci dopo", systemImage: "text.insert") }
         Button { player.addToQueue(track) } label: { Label("Aggiungi in coda", systemImage: "text.append") }
-        Button { player.startRadio(from: track) } label: { Label("Avvia radio", systemImage: "dot.radiowaves.left.and.right") }
+        if !track.isPodcast && !track.isLocal {
+            Button { player.startRadio(from: track) } label: { Label("Avvia radio", systemImage: "dot.radiowaves.left.and.right") }
+        }
         Divider()
         Button { library.toggleFavorite(track) } label: {
             library.isFavorite(track)

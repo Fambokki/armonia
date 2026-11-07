@@ -144,6 +144,23 @@ final class DownloadManager: ObservableObject {
             Task { @MainActor in if self?.progress[id] != nil { self?.progress[id] = p } }
         }
 
+        // Episodi dei podcast: file audio diretto.
+        if let media = t.mediaURL, let url = URL(string: media) {
+            var ext = url.pathExtension.lowercased()
+            if !["mp3", "m4a", "aac", "mp4"].contains(ext) { ext = "mp3" }
+            var req = URLRequest(url: url, timeoutInterval: 60)
+            req.setValue("Armonia/1.0 (iPhone; podcast player)", forHTTPHeaderField: "User-Agent")
+            let (tmp, resp) = try await URLSession.shared.download(for: req)
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 200
+            guard (200..<300).contains(code) else { throw InnertubeError.http(code) }
+            if flags.contains(id) { throw CancellationError() }
+            let dest = Storage.downloadURL(for: id, ext: ext)
+            try? FileManager.default.removeItem(at: dest)
+            try FileManager.default.moveItem(at: tmp, to: dest)
+            Storage.removeDownloadFiles(for: id, except: ext)
+            return
+        }
+
         let info = try await Innertube.shared.stream(for: id, quality: quality, forDownload: true)
         guard !info.isHLS else { throw InnertubeError.notDownloadable }
 

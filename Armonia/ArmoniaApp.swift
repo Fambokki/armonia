@@ -5,6 +5,7 @@ struct ArmoniaApp: App {
     @StateObject private var library = LibraryStore()
     @StateObject private var player = PlayerManager.shared
     @StateObject private var downloads = DownloadManager.shared
+    @StateObject private var podcasts = PodcastStore.shared
 
     var body: some Scene {
         WindowGroup {
@@ -12,6 +13,7 @@ struct ArmoniaApp: App {
                 .environmentObject(library)
                 .environmentObject(player)
                 .environmentObject(downloads)
+                .environmentObject(podcasts)
                 .tint(Color(red: 1.0, green: 0.22, blue: 0.37))
                 .preferredColorScheme(.dark)
                 .onAppear {
@@ -32,6 +34,9 @@ struct RootView: View {
 
             NavigationStack { SearchView() }
                 .tabItem { Label("Cerca", systemImage: "magnifyingglass") }
+
+            NavigationStack { PodcastsView() }
+                .tabItem { Label("Podcast", systemImage: "mic.fill") }
 
             NavigationStack { LibraryView() }
                 .tabItem { Label("Libreria", systemImage: "square.stack.fill") }

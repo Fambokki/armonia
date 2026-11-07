@@ -21,6 +21,17 @@ final class PlayerManager: ObservableObject {
     @Published var streamQuality: AudioQuality = AudioQuality.stored("streamQuality", legacyLowKey: "streamLowQuality") {
         didSet { UserDefaults.standard.set(streamQuality.rawValue, forKey: "streamQuality") }
     }
+    /// Velocità di riproduzione dei podcast (la musica va sempre a 1×).
+    @Published var playbackRate: Float = UserDefaults.standard.object(forKey: "podcastRate") as? Float ?? 1 {
+        didSet {
+            UserDefaults.standard.set(playbackRate, forKey: "podcastRate")
+            if current?.isPodcast == true {
+                player.defaultRate = playbackRate
+                if isPlaying { player.rate = playbackRate }
+                updateNowPlaying()
+            }
+        }
+    }
     @Published var autoRadio: Bool = UserDefaults.standard.object(forKey: "autoRadio") as? Bool ?? true {
         didSet { UserDefaults.standard.set(autoRadio, forKey: "autoRadio") }
     }
@@ -53,7 +64,10 @@ final class PlayerManager: ObservableObject {
         ) { [weak self] time in
             let s = time.seconds
             Task { @MainActor in
-                if s.isFinite { self?.currentTime = s }
+                if s.isFinite {
+                    self?.currentTime = s
+                    self?.savePositionIfNeeded()
+                }
             }
         }
 
@@ -106,14 +120,14 @@ final class PlayerManager: ObservableObject {
             player.pause()
         } else {
             try? AVAudioSession.sharedInstance().setActive(true)
-            player.play()
+            startPlayer()
         }
     }
 
     func resume() {
         guard player.currentItem != nil else { togglePlay(); return }
         try? AVAudioSession.sharedInstance().setActive(true)
-        player.play()
+        startPlayer()
     }
 
     func pause() { player.pause() }
@@ -162,6 +176,40 @@ final class PlayerManager: ObservableObject {
         }
     }
 
+    /// Avanti/indietro di qualche secondo (podcast).
+    func skip(by delta: Double) {
+        let target = max(0, min(currentTime + delta, duration > 0 ? duration - 1 : currentTime + delta))
+        seek(to: target)
+        savePosition()
+    }
+
+    private func startPlayer() {
+        let rate: Float = current?.isPodcast == true ? playbackRate : 1
+        player.defaultRate = rate
+        player.play()
+        if player.rate != rate { player.rate = rate }
+    }
+
+    // MARK: - Posizione negli episodi
+
+    private var pendingResume: Double = 0
+    private var lastSavedAt: Double = 0
+
+    private func savePositionIfNeeded() {
+        guard abs(currentTime - lastSavedAt) >= 5 else { return }
+        savePosition()
+    }
+
+    private func savePosition() {
+        guard let t = current, t.isPodcast, currentTime > 0, pendingResume == 0 else { return }
+        lastSavedAt = currentTime
+        if duration > 0 && currentTime > duration - 30 {
+            PodcastStore.shared.setPlayed(t, true)
+        } else {
+            PlaybackPositions.set(t.id, currentTime)
+        }
+    }
+
     // MARK: - Caricamento
 
     private func advance() {
@@ -189,7 +237,9 @@ final class PlayerManager: ObservableObject {
         qualityLabel = ""
         loadArtwork(for: track)
         updateNowPlaying()
-        if !track.isLocal { library?.addRecent(track) }
+        if !track.isLocal && !track.isPodcast { library?.addRecent(track) }
+        updateRemoteCommands(for: track)
+        pendingResume = track.isPodcast ? PlaybackPositions.get(track.id) : 0
 
         // Brano scaricato o file importato: si riproduce dal telefono, senza rete.
         if let file = Storage.playableFile(for: track) {
@@ -199,12 +249,28 @@ final class PlayerManager: ObservableObject {
             observe(item)
             player.replaceCurrentItem(with: item)
             try? AVAudioSession.sharedInstance().setActive(true)
-            player.play()
-            if autoRadio && !track.isLocal && index >= queue.count - 2 { extendWithRadio(from: track) }
+            startPlayer()
+            if track.isPodcast { qualityLabel = "Podcast · scaricato" }
+            if autoRadio && !track.isLocal && !track.isPodcast && index >= queue.count - 2 { extendWithRadio(from: track) }
             return
         }
         if track.isLocal {
             handleFailure("File non trovato sul telefono.")
+            return
+        }
+        // Episodio di un podcast: si ascolta direttamente dal suo indirizzo.
+        if track.isPodcast {
+            guard let m = track.mediaURL, let url = URL(string: m) else {
+                handleFailure("Episodio non disponibile.")
+                return
+            }
+            qualityLabel = "Podcast"
+            let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": ["User-Agent": "Armonia/1.0 (iPhone; podcast player)"]])
+            let item = AVPlayerItem(asset: asset)
+            observe(item)
+            player.replaceCurrentItem(with: item)
+            try? AVAudioSession.sharedInstance().setActive(true)
+            startPlayer()
             return
         }
 
@@ -241,7 +307,7 @@ final class PlayerManager: ObservableObject {
                 self.observe(item)
                 self.player.replaceCurrentItem(with: item)
                 try? AVAudioSession.sharedInstance().setActive(true)
-                self.player.play()
+                self.startPlayer()
             } catch {
                 guard !Task.isCancelled, let self, self.current?.id == track.id else { return }
                 self.handleFailure(error.localizedDescription)
@@ -264,7 +330,7 @@ final class PlayerManager: ObservableObject {
         observe(item)
         player.replaceCurrentItem(with: item)
         try? AVAudioSession.sharedInstance().setActive(true)
-        player.play()
+        startPlayer()
     }
 
     private func observe(_ item: AVPlayerItem) {
@@ -278,7 +344,10 @@ final class PlayerManager: ObservableObject {
         endObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.next() }
+            Task { @MainActor in
+                if let t = self?.current, t.isPodcast { PodcastStore.shared.setPlayed(t, true) }
+                self?.next()
+            }
         }
     }
 
@@ -288,6 +357,10 @@ final class PlayerManager: ObservableObject {
             isLoading = false
             failures = 0
             if dur.isFinite && dur > 0 { duration = dur }
+            if pendingResume > 15, duration == 0 || pendingResume < duration - 20 {
+                seek(to: pendingResume)
+            }
+            pendingResume = 0
             updateNowPlaying()
             prefetchNext()
         case .failed:
@@ -321,7 +394,7 @@ final class PlayerManager: ObservableObject {
     private func prefetchNext() {
         guard queue.indices.contains(index + 1) else { return }
         let next = queue[index + 1]
-        guard Storage.playableFile(for: next) == nil, !next.isLocal else { return }
+        guard Storage.playableFile(for: next) == nil, !next.isLocal, !next.isPodcast else { return }
         let id = next.id
         let quality = streamQuality
         Task.detached(priority: .utility) {
@@ -332,8 +405,8 @@ final class PlayerManager: ObservableObject {
     }
 
     private func extendWithRadio(from seed: Track) {
-        if seed.isLocal {
-            // Niente radio per i file locali: a fine coda si ferma.
+        if seed.isLocal || seed.isPodcast {
+            // Niente radio per file locali e podcast: a fine coda si ferma.
             if pendingAdvance { pendingAdvance = false; player.pause(); seek(to: 0) }
             return
         }
@@ -360,6 +433,7 @@ final class PlayerManager: ObservableObject {
 
     private func controlStatusChanged(_ status: AVPlayer.TimeControlStatus) {
         let playing = status != .paused
+        if !playing { savePosition() }
         if playing != isPlaying {
             isPlaying = playing
             updateNowPlaying()
@@ -375,8 +449,29 @@ final class PlayerManager: ObservableObject {
         }
     }
 
+    /// Schermata di blocco: per i podcast salti di 15/30 s al posto di brano precedente/successivo.
+    private func updateRemoteCommands(for t: Track) {
+        let c = MPRemoteCommandCenter.shared()
+        c.skipBackwardCommand.isEnabled = t.isPodcast
+        c.skipForwardCommand.isEnabled = t.isPodcast
+        c.previousTrackCommand.isEnabled = !t.isPodcast
+        c.nextTrackCommand.isEnabled = !t.isPodcast
+    }
+
     private func configureRemoteCommands() {
         let c = MPRemoteCommandCenter.shared()
+        c.skipBackwardCommand.preferredIntervals = [15]
+        c.skipForwardCommand.preferredIntervals = [30]
+        c.skipBackwardCommand.isEnabled = false
+        c.skipForwardCommand.isEnabled = false
+        c.skipBackwardCommand.addTarget { [weak self] _ in
+            Task { @MainActor in self?.skip(by: -15) }
+            return .success
+        }
+        c.skipForwardCommand.addTarget { [weak self] _ in
+            Task { @MainActor in self?.skip(by: 30) }
+            return .success
+        }
         c.playCommand.addTarget { [weak self] _ in
             Task { @MainActor in self?.resume() }
             return .success
@@ -429,7 +524,7 @@ final class PlayerManager: ObservableObject {
             MPMediaItemPropertyTitle: t.title,
             MPMediaItemPropertyArtist: t.artist,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTime,
-            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0
+            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? Double(t.isPodcast ? playbackRate : 1) : 0.0
         ]
         if let album = t.album { info[MPMediaItemPropertyAlbumTitle] = album }
         if duration > 0 { info[MPMediaItemPropertyPlaybackDuration] = duration }

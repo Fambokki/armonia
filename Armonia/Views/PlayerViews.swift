@@ -115,6 +115,10 @@ struct NowPlayingView: View {
                 HStack {
                     RoutePickerButton().frame(width: 36, height: 36)
                     Spacer()
+                    if isPodcast {
+                        speedMenu
+                        Spacer()
+                    }
                     Button { showQueue = true } label: {
                         Image(systemName: "list.bullet").font(.title3)
                     }
@@ -151,10 +155,18 @@ struct NowPlayingView: View {
         }
     }
 
+    private var isPodcast: Bool { player.current?.isPodcast == true }
+
     private var controls: some View {
         HStack(spacing: 46) {
-            Button { player.previous() } label: {
-                Image(systemName: "backward.fill").font(.system(size: 30))
+            if isPodcast {
+                Button { player.skip(by: -15) } label: {
+                    Image(systemName: "gobackward.15").font(.system(size: 30))
+                }
+            } else {
+                Button { player.previous() } label: {
+                    Image(systemName: "backward.fill").font(.system(size: 30))
+                }
             }
             Button { player.togglePlay() } label: {
                 ZStack {
@@ -167,11 +179,45 @@ struct NowPlayingView: View {
                 }
                 .frame(width: 64, height: 64)
             }
-            Button { player.next() } label: {
-                Image(systemName: "forward.fill").font(.system(size: 30))
+            if isPodcast {
+                Button { player.skip(by: 30) } label: {
+                    Image(systemName: "goforward.30").font(.system(size: 30))
+                }
+            } else {
+                Button { player.next() } label: {
+                    Image(systemName: "forward.fill").font(.system(size: 30))
+                }
             }
         }
         .foregroundStyle(.primary)
+    }
+
+    private var speedMenu: some View {
+        Menu {
+            ForEach([0.75, 1.0, 1.25, 1.5, 1.75, 2.0], id: \.self) { r in
+                Button {
+                    player.playbackRate = Float(r)
+                } label: {
+                    if abs(Double(player.playbackRate) - r) < 0.01 {
+                        Label(speedText(Float(r)), systemImage: "checkmark")
+                    } else {
+                        Text(speedText(Float(r)))
+                    }
+                }
+            }
+        } label: {
+            Text(speedText(player.playbackRate))
+                .font(.subheadline.weight(.semibold).monospacedDigit())
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(.white.opacity(0.12), in: Capsule())
+        }
+        .foregroundStyle(.secondary)
+    }
+
+    private func speedText(_ r: Float) -> String {
+        let s = r == r.rounded() ? String(format: "%.0f", r) : String(format: "%g", r)
+        return s.replacingOccurrences(of: ".", with: ",") + "×"
     }
 }
 

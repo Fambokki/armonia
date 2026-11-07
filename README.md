@@ -15,6 +15,7 @@ Client musicale personale per iPhone, in stile BitChord: cerca e ascolta il cata
 - Import delle playlist di Spotify (link pubblico o CSV di exportify.app)
 - Import dei tuoi file FLAC/ALAC/MP3 dall'app File, riprodotti in qualità originale
 - Coda modificabile, preferiti, recenti, playlist locali (esportabili in JSON)
+- Podcast: ricerca e classifica (catalogo Apple Podcasts), iscrizioni, nuovi episodi, download, ripresa, velocità e salti 15/30 s
 - Uscita AirPlay / Bluetooth
 
 YouTube Music non offre audio lossless: lo streaming e i download sono AAC (di solito 128 kbps).

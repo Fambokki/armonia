@@ -7,8 +7,11 @@ struct Track: Identifiable, Codable, Hashable {
     var album: String?
     var duration: String?
     var thumbnail: String?
+    /// Indirizzo diretto dell'audio (episodi dei podcast). nil per i brani di YouTube Music.
+    var mediaURL: String? = nil
 
     var isLocal: Bool { id.hasPrefix("local-") }
+    var isPodcast: Bool { id.hasPrefix("pod-") }
 
     /// Copertina ad alta risoluzione (le miniature di YT Music hanno la dimensione nell'URL).
     var artworkURL: URL? {
@@ -190,8 +193,10 @@ enum Storage {
     }
 
     /// File scaricato di un brano (AAC .m4a oppure Opus .caf), se esiste.
+    static let downloadExtensions = ["caf", "m4a", "mp3", "aac", "mp4"]
+
     static func downloadedFile(for id: String) -> URL? {
-        for ext in ["caf", "m4a"] {
+        for ext in downloadExtensions {
             let u = downloadURL(for: id, ext: ext)
             if FileManager.default.fileExists(atPath: u.path) { return u }
         }
@@ -199,7 +204,7 @@ enum Storage {
     }
 
     static func removeDownloadFiles(for id: String, except keep: String? = nil) {
-        for ext in ["caf", "m4a"] where ext != keep {
+        for ext in downloadExtensions where ext != keep {
             try? FileManager.default.removeItem(at: downloadURL(for: id, ext: ext))
         }
     }
