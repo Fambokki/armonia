@@ -191,6 +191,14 @@ struct SettingsView: View {
                     Text("Di base Armonia usa la qualità più alta che YouTube Music offre (AAC, di solito 128 kbps). YouTube non ha audio lossless: per ascoltare in FLAC o ALAC importa i tuoi file con + → Importa file audio.")
                 }
 
+                Section("Aspetto") {
+                    NavigationLink {
+                        IconPickerView()
+                    } label: {
+                        Label("Icona dell'app", systemImage: "app.badge")
+                    }
+                }
+
                 Section {
                     Toggle("Radio automatica", isOn: $player.autoRadio)
                 } footer: {
