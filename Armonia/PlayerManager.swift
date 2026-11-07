@@ -18,8 +18,8 @@ final class PlayerManager: ObservableObject {
     @Published var showFullPlayer = false
     /// Qualità del brano in riproduzione, es. "AAC 128 kbps" o "FLAC · locale".
     @Published private(set) var qualityLabel: String = ""
-    @Published var streamLowQuality: Bool = UserDefaults.standard.bool(forKey: "streamLowQuality") {
-        didSet { UserDefaults.standard.set(streamLowQuality, forKey: "streamLowQuality") }
+    @Published var streamQuality: AudioQuality = AudioQuality.stored("streamQuality", legacyLowKey: "streamLowQuality") {
+        didSet { UserDefaults.standard.set(streamQuality.rawValue, forKey: "streamQuality") }
     }
     @Published var autoRadio: Bool = UserDefaults.standard.object(forKey: "autoRadio") as? Bool ?? true {
         didSet { UserDefaults.standard.set(autoRadio, forKey: "autoRadio") }
@@ -194,7 +194,7 @@ final class PlayerManager: ObservableObject {
         // Brano scaricato o file importato: si riproduce dal telefono, senza rete.
         if let file = Storage.playableFile(for: track) {
             let ext = file.pathExtension.uppercased()
-            qualityLabel = track.isLocal ? "\(ext == "M4A" ? "ALAC/AAC" : ext) · file locale" : "Scaricato"
+            qualityLabel = track.isLocal ? "\(ext == "M4A" ? "ALAC/AAC" : ext) · file locale" : (ext == "CAF" ? "Scaricato · Opus" : "Scaricato · AAC")
             let item = AVPlayerItem(url: file)
             observe(item)
             player.replaceCurrentItem(with: item)
@@ -208,10 +208,31 @@ final class PlayerManager: ObservableObject {
             return
         }
 
-        let low = streamLowQuality
+        playingOpusFile = false
+        let quality = forceNormalOnce ? .normal : streamQuality
+        forceNormalOnce = false
+        // Alta qualità già pronta in cache: parte subito, senza rete.
+        if quality == .high, let cached = OpusCache.cachedFile(for: track.id) {
+            playFile(cached, label: OpusCache.label(for: track.id))
+            if autoRadio && index >= queue.count - 2 { extendWithRadio(from: track) }
+            return
+        }
         loadTask = Task { [weak self] in
             do {
-                let stream = try await Innertube.shared.stream(for: track.id, lowQuality: low)
+                var stream = try await Innertube.shared.stream(for: track.id, quality: quality)
+                if stream.isOpus {
+                    do {
+                        let file = try await OpusCache.shared.file(for: track.id, info: stream)
+                        guard !Task.isCancelled, let self, self.current?.id == track.id else { return }
+                        self.playFile(file, label: stream.label)
+                        return
+                    } catch is CancellationError {
+                        return
+                    } catch {
+                        // Conversione non riuscita: si ascolta in AAC.
+                        stream = try await Innertube.shared.stream(for: track.id, quality: .normal)
+                    }
+                }
                 guard !Task.isCancelled, let self, self.current?.id == track.id else { return }
                 self.qualityLabel = stream.label
                 let asset = AVURLAsset(url: stream.url,
@@ -230,6 +251,20 @@ final class PlayerManager: ObservableObject {
         if autoRadio && index >= queue.count - 2 {
             extendWithRadio(from: track)
         }
+    }
+
+    /// true mentre si riproduce un file Opus convertito (per ripiegare sull'AAC se iOS lo rifiuta).
+    private var playingOpusFile = false
+    private var forceNormalOnce = false
+
+    private func playFile(_ file: URL, label: String, isOpus: Bool = true) {
+        playingOpusFile = isOpus && file.pathExtension == "caf"
+        qualityLabel = label
+        let item = AVPlayerItem(url: file)
+        observe(item)
+        player.replaceCurrentItem(with: item)
+        try? AVAudioSession.sharedInstance().setActive(true)
+        player.play()
     }
 
     private func observe(_ item: AVPlayerItem) {
@@ -256,6 +291,16 @@ final class PlayerManager: ObservableObject {
             updateNowPlaying()
             prefetchNext()
         case .failed:
+            if playingOpusFile, let t = current {
+                // Il file Opus convertito non è stato accettato: lo si elimina e si riprova in AAC.
+                playingOpusFile = false
+                try? FileManager.default.removeItem(at: OpusCache.url(for: t.id))
+                errorMessage = "Alta qualità non riuscita per questo brano: uso l'AAC."
+                forceNormalOnce = true
+                loadCurrent()
+                errorMessage = "Alta qualità non riuscita per questo brano: uso l'AAC."
+                return
+            }
             handleFailure(error ?? "errore di riproduzione")
         default:
             break
@@ -278,8 +323,12 @@ final class PlayerManager: ObservableObject {
         let next = queue[index + 1]
         guard Storage.playableFile(for: next) == nil, !next.isLocal else { return }
         let id = next.id
-        let low = streamLowQuality
-        Task.detached(priority: .utility) { _ = try? await Innertube.shared.stream(for: id, lowQuality: low) }
+        let quality = streamQuality
+        Task.detached(priority: .utility) {
+            guard let info = try? await Innertube.shared.stream(for: id, quality: quality) else { return }
+            // In alta qualità si prepara già il file del brano successivo, così parte senza attesa.
+            if info.isOpus { _ = try? await OpusCache.shared.file(for: id, info: info) }
+        }
     }
 
     private func extendWithRadio(from seed: Track) {

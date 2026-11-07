@@ -131,6 +131,36 @@ struct HomeFeed {
     var continuation: FeedContinuation?
 }
 
+// MARK: - Qualità audio
+
+enum AudioQuality: String, CaseIterable, Identifiable {
+    case low, normal, high
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .low: return "Risparmio dati"
+        case .normal: return "Normale"
+        case .high: return "Alta"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .low: return "AAC · circa 48 kbps"
+        case .normal: return "AAC · circa 128 kbps"
+        case .high: return "Opus · circa 160 kbps"
+        }
+    }
+
+    /// Legge l'impostazione salvata (con conversione dalla vecchia opzione sì/no).
+    static func stored(_ key: String, legacyLowKey: String) -> AudioQuality {
+        if let raw = UserDefaults.standard.string(forKey: key), let q = AudioQuality(rawValue: raw) { return q }
+        return UserDefaults.standard.bool(forKey: legacyLowKey) ? .low : .normal
+    }
+}
+
 // MARK: - Cartelle dell'app
 
 enum Storage {
@@ -146,16 +176,41 @@ enum Storage {
         return u
     }
 
-    static func downloadURL(for id: String) -> URL {
-        downloads.appendingPathComponent(id + ".m4a")
+    /// Cartella di cache per i brani in alta qualità (Opus) ascoltati in streaming.
+    static var opusCache: URL {
+        let u = URL.cachesDirectory.appendingPathComponent("Opus", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: u.path) {
+            try? FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
+        }
+        return u
+    }
+
+    static func downloadURL(for id: String, ext: String = "m4a") -> URL {
+        downloads.appendingPathComponent(id + "." + ext)
+    }
+
+    /// File scaricato di un brano (AAC .m4a oppure Opus .caf), se esiste.
+    static func downloadedFile(for id: String) -> URL? {
+        for ext in ["caf", "m4a"] {
+            let u = downloadURL(for: id, ext: ext)
+            if FileManager.default.fileExists(atPath: u.path) { return u }
+        }
+        return nil
+    }
+
+    static func removeDownloadFiles(for id: String, except keep: String? = nil) {
+        for ext in ["caf", "m4a"] where ext != keep {
+            try? FileManager.default.removeItem(at: downloadURL(for: id, ext: ext))
+        }
     }
 
     /// File da riprodurre senza rete, se esiste.
     static func playableFile(for t: Track) -> URL? {
-        let u = t.isLocal
-            ? locals.appendingPathComponent(String(t.id.dropFirst("local-".count)))
-            : downloadURL(for: t.id)
-        return FileManager.default.fileExists(atPath: u.path) ? u : nil
+        if t.isLocal {
+            let u = locals.appendingPathComponent(String(t.id.dropFirst("local-".count)))
+            return FileManager.default.fileExists(atPath: u.path) ? u : nil
+        }
+        return downloadedFile(for: t.id)
     }
 
     static func size(of folder: URL) -> Int64 {

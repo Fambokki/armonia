@@ -98,12 +98,12 @@ final class LibraryStore: ObservableObject {
     }
 
     func removeDownload(_ t: Track) {
-        try? FileManager.default.removeItem(at: Storage.downloadURL(for: t.id))
+        Storage.removeDownloadFiles(for: t.id)
         downloads.removeAll { $0.id == t.id }
     }
 
     func removeAllDownloads() {
-        for t in downloads { try? FileManager.default.removeItem(at: Storage.downloadURL(for: t.id)) }
+        for t in downloads { Storage.removeDownloadFiles(for: t.id) }
         downloads = []
     }
 

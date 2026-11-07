@@ -11,6 +11,8 @@ struct StreamInfo: Sendable {
     /// Dimensione in byte (nota solo per i file diretti, non per HLS).
     var contentLength: Int64?
     var isHLS = false
+    /// true = audio Opus in contenitore WebM: va convertito prima della riproduzione.
+    var isOpus = false
     /// Descrizione della qualità, es. "AAC 128 kbps".
     var label = ""
 }
@@ -180,16 +182,20 @@ actor Innertube {
 
     // MARK: - Flusso audio
 
-    /// - lowQuality: sceglie il bitrate più basso (risparmio dati).
+    /// - quality: .low = AAC più leggero, .normal = AAC migliore, .high = Opus (poi AAC come riserva).
     /// - forDownload: esclude HLS, che non si può salvare come file singolo.
-    func stream(for videoId: String, lowQuality: Bool = false, forDownload: Bool = false) async throws -> StreamInfo {
-        let cacheKey = videoId + (lowQuality ? "-low" : "") + (forDownload ? "-dl" : "")
+    func stream(for videoId: String, quality: AudioQuality = .normal, forDownload: Bool = false) async throws -> StreamInfo {
+        let lowQuality = quality == .low
+        let cacheKey = videoId + "-" + quality.rawValue + (forDownload ? "-dl" : "")
         if let cached = streamCache[cacheKey], Date().timeIntervalSince(cached.date) < 3600 {
             return cached.info
         }
         await loadRemoteConfigIfNeeded()
 
-        struct Candidate { let url: URL; let label: String; let isHLS: Bool; let length: Int64? }
+        struct Candidate {
+            let url: URL; let label: String; let isHLS: Bool; let length: Int64?
+            var isOpus = false
+        }
 
         var reasons: [String] = []
         for c in playerClients {
@@ -235,6 +241,18 @@ actor Innertube {
                 let adaptive = (sd["adaptiveFormats"] as? [[String: Any]]) ?? []
                 let muxed = (sd["formats"] as? [[String: Any]]) ?? []
                 var candidates: [Candidate] = []
+                if quality == .high {
+                    candidates += adaptive
+                        .filter { (($0["mimeType"] as? String) ?? "").contains("opus") }
+                        .sorted { bitrate($0) > bitrate($1) }
+                        .prefix(1)
+                        .compactMap { f in
+                            (f["url"] as? String).flatMap(URL.init(string:)).map {
+                                Candidate(url: $0, label: "Opus \(kbps(f)) kbps", isHLS: false,
+                                          length: length(f), isOpus: true)
+                            }
+                        }
+                }
                 candidates += adaptive
                     .filter { (($0["mimeType"] as? String) ?? "").hasPrefix("audio/mp4") }
                     .sorted { lowQuality ? bitrate($0) < bitrate($1) : bitrate($0) > bitrate($1) }
@@ -259,12 +277,12 @@ actor Innertube {
                     continue
                 }
                 var codes: [Int] = []
-                for cand in candidates.prefix(3) {
+                for cand in candidates.prefix(4) {
                     let (code, total) = await probe(cand.url, userAgent: c.userAgent)
                     if code == 200 || code == 206 {
                         let info = StreamInfo(url: cand.url, userAgent: c.userAgent,
                                               contentLength: total ?? cand.length,
-                                              isHLS: cand.isHLS, label: cand.label)
+                                              isHLS: cand.isHLS, isOpus: cand.isOpus, label: cand.label)
                         streamCache[cacheKey] = CachedStream(info: info, date: Date())
                         return info
                     }

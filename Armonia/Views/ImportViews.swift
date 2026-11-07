@@ -206,20 +206,30 @@ struct SpotifyImportView: View {
 struct SettingsView: View {
     @EnvironmentObject private var player: PlayerManager
     @EnvironmentObject private var library: LibraryStore
+    @EnvironmentObject private var downloads: DownloadManager
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("downloadLowQuality") private var downloadLowQuality = false
     @State private var confirmDelete = false
+    @State private var cacheSize: Int64 = Storage.size(of: Storage.opusCache)
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    Toggle("Risparmio dati in streaming", isOn: $player.streamLowQuality)
-                    Toggle("Download a qualità ridotta", isOn: $downloadLowQuality)
+                    qualityPicker("Streaming", selection: $player.streamQuality)
                 } header: {
-                    Text("Qualità audio")
+                    Text("Qualità in streaming")
                 } footer: {
-                    Text("Di base Armonia usa la qualità più alta che YouTube Music offre (AAC, di solito 128 kbps). YouTube non ha audio lossless: per ascoltare in FLAC o ALAC importa i tuoi file con + → Importa file audio.")
+                    Text(player.streamQuality == .high
+                         ? "Alta: Opus a circa 160 kbps, il formato migliore che YouTube offre senza Premium. Ogni brano parte dopo 1–3 secondi (viene scaricato e preparato), il successivo è già pronto. Se un brano non è disponibile in Opus si usa l'AAC."
+                         : "Normale è l'AAC a circa 128 kbps. Risparmio dati usa circa 48 kbps, utile con poca connessione.")
+                }
+
+                Section {
+                    qualityPicker("Download", selection: $downloads.quality)
+                } header: {
+                    Text("Qualità dei download")
+                } footer: {
+                    Text("Vale per i brani che scarichi da ora in poi. YouTube non ha audio lossless: per FLAC o ALAC importa i tuoi file con + → Importa file audio.")
                 }
 
                 Section("Aspetto") {
@@ -239,6 +249,14 @@ struct SettingsView: View {
                 Section("Spazio sul telefono") {
                     LabeledContent("Brani scaricati", value: "\(library.downloads.count) · \(formatBytes(Storage.size(of: Storage.downloads)))")
                     LabeledContent("File importati", value: "\(library.locals.count) · \(formatBytes(Storage.size(of: Storage.locals)))")
+                    LabeledContent("Cache alta qualità", value: formatBytes(cacheSize))
+                    Button("Svuota cache alta qualità") {
+                        Task {
+                            await OpusCache.shared.clear()
+                            cacheSize = Storage.size(of: Storage.opusCache)
+                        }
+                    }
+                    .disabled(cacheSize == 0)
                     Button("Elimina tutti i download", role: .destructive) { confirmDelete = true }
                         .disabled(library.downloads.isEmpty)
                 }
@@ -256,6 +274,20 @@ struct SettingsView: View {
                 Button("Elimina", role: .destructive) { library.removeAllDownloads() }
             }
         }
+    }
+
+    private func qualityPicker(_ title: String, selection: Binding<AudioQuality>) -> some View {
+        Picker(title, selection: selection) {
+            ForEach(AudioQuality.allCases) { q in
+                VStack(alignment: .leading) {
+                    Text(q.label)
+                    Text(q.detail).font(.caption).foregroundStyle(.secondary)
+                }
+                .tag(q)
+            }
+        }
+        .pickerStyle(.inline)
+        .labelsHidden()
     }
 }
 
