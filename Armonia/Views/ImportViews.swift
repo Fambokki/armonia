@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import WebKit
 
 /// Importa una playlist di Spotify: link pubblico oppure file CSV di Exportify.
 struct SpotifyImportView: View {
@@ -16,6 +17,7 @@ struct SpotifyImportView: View {
     @State private var phase: Phase = .input
     @State private var error: String?
     @State private var showCSVPicker = false
+    @State private var showExportify = false
     @State private var name = ""
     @State private var songs: [ImportedSong] = []
     @State private var matches: [Track?] = []
@@ -36,6 +38,12 @@ struct SpotifyImportView: View {
                     Button("Chiudi") { dismiss() }
                 }
             }
+            .sheet(isPresented: $showExportify) {
+                ExportifySheet { fileName, text in
+                    showExportify = false
+                    importCSV(text: text, name: fileName)
+                }
+            }
             .fileImporter(isPresented: $showCSVPicker,
                           allowedContentTypes: [.commaSeparatedText, .plainText, .text]) { result in
                 guard case .success(let url) = result else { return }
@@ -45,12 +53,7 @@ struct SpotifyImportView: View {
                     error = "Non riesco a leggere il file."
                     return
                 }
-                let parsed = SpotifyImporter.parseCSV(text)
-                guard !parsed.isEmpty else {
-                    error = "Nel file non ho trovato le colonne \"Track Name\" e \"Artist Name(s)\"."
-                    return
-                }
-                start(name: url.deletingPathExtension().lastPathComponent, songs: parsed)
+                importCSV(text: text, name: url.deletingPathExtension().lastPathComponent)
             }
         }
     }
@@ -60,6 +63,19 @@ struct SpotifyImportView: View {
     @ViewBuilder
     private var inputForm: some View {
         Section {
+            Button {
+                error = nil
+                showExportify = true
+            } label: {
+                Label("Accedi a Spotify e scegli la playlist", systemImage: "person.crop.circle.badge.checkmark")
+            }
+        } header: {
+            Text("Consigliato · nessun limite di brani")
+        } footer: {
+            Text("Si apre Exportify: accedi con il tuo account Spotify, poi tocca \"Export\" accanto alla playlist (anche \"Brani che ti piacciono\" e quelle private). Armonia riceve l'elenco completo da sola.")
+        }
+
+        Section {
             TextField("https://open.spotify.com/playlist/…", text: $link)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
@@ -67,17 +83,17 @@ struct SpotifyImportView: View {
             Button("Importa dal link") { fetchLink() }
                 .disabled(link.trimmingCharacters(in: .whitespaces).isEmpty)
         } header: {
-            Text("Link della playlist")
+            Text("Veloce · solo playlist pubbliche")
         } footer: {
-            Text("In Spotify: ··· sulla playlist → Condividi → Copia link. La playlist deve essere pubblica. Dal link si leggono fino a circa 100 brani.")
+            Text("In Spotify: ··· sulla playlist → Condividi → Copia link. Senza accesso Spotify mostra solo i primi brani (circa 100): per playlist lunghe usa l'accesso qui sopra.")
         }
 
         Section {
             Button("Scegli file CSV…") { showCSVPicker = true }
         } header: {
-            Text("Playlist lunghe o private")
+            Text("Da file")
         } footer: {
-            Text("Da computer o telefono apri exportify.app, accedi con Spotify ed esporta la playlist in CSV, poi salvala nell'app File e sceglila qui.")
+            Text("Se hai già esportato una playlist in CSV (per esempio da exportify.app sul computer), salvala nell'app File e sceglila qui.")
         }
 
         if let error {
@@ -91,6 +107,10 @@ struct SpotifyImportView: View {
                 Text("Cerco i brani su YouTube Music…")
                 ProgressView(value: Double(done), total: Double(max(total, 1)))
                 Text("\(done) di \(total)").font(.footnote).foregroundStyle(.secondary)
+                if total > 200 {
+                    Text("Playlist lunga: ci vorrà qualche minuto. Tieni l'app aperta, lo schermo resta acceso da solo.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             .padding(.vertical, 6)
         }
@@ -155,12 +175,23 @@ struct SpotifyImportView: View {
         }
     }
 
+    private func importCSV(text: String, name: String) {
+        let parsed = SpotifyImporter.parseCSV(text)
+        guard !parsed.isEmpty else {
+            error = "Nel file non ho trovato le colonne \"Track Name\" e \"Artist Name(s)\"."
+            return
+        }
+        start(name: name.replacingOccurrences(of: "_", with: " "), songs: parsed)
+    }
+
     private func start(name: String, songs: [ImportedSong]) {
         error = nil
         self.name = name
         self.songs = songs
         phase = .matching(done: 0, total: songs.count)
+        UIApplication.shared.isIdleTimerDisabled = true
         Task {
+            defer { UIApplication.shared.isIdleTimerDisabled = false }
             let total = songs.count
             let result = await SpotifyImporter.match(songs) { done in
                 phase = .matching(done: done, total: total)
@@ -224,6 +255,136 @@ struct SettingsView: View {
             .confirmationDialog("Eliminare tutti i brani scaricati?", isPresented: $confirmDelete, titleVisibility: .visible) {
                 Button("Elimina", role: .destructive) { library.removeAllDownloads() }
             }
+        }
+    }
+}
+
+
+// MARK: - Exportify dentro l'app
+
+/// Apre exportify.app in una finestra interna e intercetta il CSV scaricato.
+struct ExportifySheet: View {
+    let onCSV: (_ name: String, _ text: String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var message: String?
+    @State private var loading = true
+
+    var body: some View {
+        NavigationStack {
+            ExportifyWebView(onCSV: onCSV, onMessage: { message = $0 }, onLoading: { loading = $0 })
+                .ignoresSafeArea(edges: .bottom)
+                .overlay(alignment: .top) {
+                    if let message {
+                        Text(message)
+                            .font(.footnote)
+                            .padding(10)
+                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+                            .padding()
+                    }
+                }
+                .navigationTitle("Exportify")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("Chiudi") { dismiss() } }
+                    ToolbarItem(placement: .primaryAction) { if loading { ProgressView() } }
+                }
+        }
+    }
+}
+
+struct ExportifyWebView: UIViewRepresentable {
+    let onCSV: (String, String) -> Void
+    let onMessage: (String?) -> Void
+    let onLoading: (Bool) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeUIView(context: Context) -> WKWebView {
+        let config = WKWebViewConfiguration()
+        config.websiteDataStore = .default()   // resta collegato a Spotify tra un import e l'altro
+        let web = WKWebView(frame: .zero, configuration: config)
+        // User agent di Safari: alcuni accessi (es. "Continua con Google") rifiutano le finestre interne.
+        web.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
+        web.navigationDelegate = context.coordinator
+        web.uiDelegate = context.coordinator
+        web.allowsBackForwardNavigationGestures = true
+        web.load(URLRequest(url: URL(string: "https://exportify.app/")!))
+        return web
+    }
+
+    func updateUIView(_ uiView: WKWebView, context: Context) {}
+
+    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
+        let parent: ExportifyWebView
+        private var destinations: [ObjectIdentifier: URL] = [:]
+
+        init(_ parent: ExportifyWebView) { self.parent = parent }
+
+        // I CSV arrivano come download (link con attributo "download" o file non visualizzabile).
+        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
+            navigationAction.shouldPerformDownload ? .download : .allow
+        }
+
+        func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse) async -> WKNavigationResponsePolicy {
+            let mime = navigationResponse.response.mimeType ?? ""
+            let isCSV = mime.contains("csv") || (navigationResponse.response.suggestedFilename ?? "").hasSuffix(".csv")
+            return isCSV || !navigationResponse.canShowMIMEType ? .download : .allow
+        }
+
+        func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+            download.delegate = self
+        }
+
+        func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+            download.delegate = self
+        }
+
+        // Finestre "popup" (target=_blank): si aprono nella stessa vista.
+        func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
+                     for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+            if navigationAction.targetFrame == nil { webView.load(navigationAction.request) }
+            return nil
+        }
+
+        func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            parent.onLoading(true)
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            parent.onLoading(false)
+        }
+
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            parent.onLoading(false)
+        }
+
+        func download(_ download: WKDownload, decideDestinationUsing response: URLResponse,
+                      suggestedFilename: String) async -> URL? {
+            let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let url = dir.appendingPathComponent(suggestedFilename.isEmpty ? "playlist.csv" : suggestedFilename)
+            destinations[ObjectIdentifier(download)] = url
+            parent.onMessage("Ricevo la playlist…")
+            return url
+        }
+
+        func downloadDidFinish(_ download: WKDownload) {
+            guard let url = destinations.removeValue(forKey: ObjectIdentifier(download)) else { return }
+            if url.pathExtension.lowercased() == "zip" {
+                parent.onMessage("Hai scaricato un archivio ZIP: esporta le playlist una alla volta con \"Export\".")
+                return
+            }
+            guard let data = try? Data(contentsOf: url),
+                  let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) else {
+                parent.onMessage("Non riesco a leggere il file scaricato.")
+                return
+            }
+            parent.onMessage(nil)
+            parent.onCSV(url.deletingPathExtension().lastPathComponent, text)
+        }
+
+        func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
+            parent.onMessage("Download non riuscito: \(error.localizedDescription)")
         }
     }
 }

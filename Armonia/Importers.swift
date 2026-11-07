@@ -164,13 +164,13 @@ enum SpotifyImporter {
         return (index, found?.first)
     }
 
-    /// Cerca ogni brano su YouTube Music (4 ricerche alla volta) e restituisce gli abbinamenti nell'ordine originale.
+    /// Cerca ogni brano su YouTube Music (6 ricerche alla volta) e restituisce gli abbinamenti nell'ordine originale.
     static func match(_ songs: [ImportedSong], progress: @escaping @MainActor (Int) -> Void) async -> [Track?] {
         var results = [Track?](repeating: nil, count: songs.count)
         var done = 0
         await withTaskGroup(of: (Int, Track?).self) { group in
             var next = 0
-            while next < min(4, songs.count) {
+            while next < min(6, songs.count) {
                 let i = next
                 next += 1
                 group.addTask { await find(songs[i], index: i) }
