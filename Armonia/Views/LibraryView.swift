@@ -202,8 +202,9 @@ struct TrackListScreen: View {
 
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var player: PlayerManager
-    @State private var showRename = false
+    @State private var renaming = false
     @State private var newName = ""
+    @FocusState private var nameFocused: Bool
     @State private var sort: TrackSort = .custom
     @State private var ascending = true
     @State private var filter = ""
@@ -257,6 +258,10 @@ struct TrackListScreen: View {
     var body: some View {
         let shown = tracks
         List {
+            if playlistID != nil {
+                titleHeader
+                    .listRowSeparator(.hidden)
+            }
             if !allTracks.isEmpty {
                 VStack(spacing: 10) {
                     HStack(spacing: 12) {
@@ -319,26 +324,84 @@ struct TrackListScreen: View {
         }
         .toolbar {
             if playlistID != nil {
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button {
-                        newName = library.title(for: source)
-                        showRename = true
-                    } label: {
-                        Image(systemName: "pencil")
+                if renaming {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Annulla") { endRename(save: false) }
                     }
-                    Button(editMode.isEditing ? "Fine" : "Modifica") {
-                        if !editMode.isEditing && sort != .custom { setSort(.custom) }
-                        withAnimation { editMode = editMode.isEditing ? .inactive : .active }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Salva") { endRename(save: true) }
+                            .fontWeight(.semibold)
+                            .disabled(cleanName.isEmpty)
+                    }
+                } else {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { startRename() } label: { Image(systemName: "pencil") }
+                            .accessibilityLabel("Rinomina playlist")
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button(editMode.isEditing ? "Fine" : "Modifica") {
+                            if !editMode.isEditing && sort != .custom { setSort(.custom) }
+                            withAnimation { editMode = editMode.isEditing ? .inactive : .active }
+                        }
                     }
                 }
             }
         }
+        .navigationBarBackButtonHidden(renaming)
         .onAppear(perform: loadSort)
-        .sheet(isPresented: $showRename) {
-            PlaylistNameSheet(title: "Rinomina playlist", actionTitle: "Salva", initial: newName) { name in
-                if let id = playlistID { library.renamePlaylist(id, to: name) }
+    }
+
+    // MARK: - Nome della playlist (modificabile direttamente qui)
+
+    private var cleanName: String {
+        newName.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespaces)
+    }
+
+    @ViewBuilder
+    private var titleHeader: some View {
+        if renaming {
+            TextField("Nome della playlist", text: $newName, axis: .vertical)
+                .font(.title2.weight(.bold))
+                .lineLimit(1...5)
+                .focused($nameFocused)
+                .submitLabel(.done)
+                .onChange(of: newName) { _, v in
+                    if v.contains("\n") {   // Invio = salva
+                        newName = v.replacingOccurrences(of: "\n", with: "")
+                        endRename(save: true)
+                    }
+                }
+                .padding(12)
+                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        } else {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(library.title(for: source))
+                    .font(.title2.weight(.bold))
+                    .fixedSize(horizontal: false, vertical: true)
+                Image(systemName: "pencil")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
             }
+            .contentShape(Rectangle())
+            .onTapGesture { startRename() }
         }
+    }
+
+    private func startRename() {
+        editMode = .inactive
+        newName = library.title(for: source)
+        withAnimation { renaming = true }
+        // Il campo esiste solo dopo il cambio di stato: si attiva la tastiera subito dopo.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { nameFocused = true }
+    }
+
+    private func endRename(save: Bool) {
+        if save, let id = playlistID, !cleanName.isEmpty {
+            library.renamePlaylist(id, to: cleanName)
+        }
+        nameFocused = false
+        withAnimation { renaming = false }
     }
 
     // MARK: - Ordinamento
