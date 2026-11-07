@@ -203,6 +203,8 @@ struct TrackListScreen: View {
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var player: PlayerManager
     @State private var renaming = false
+    /// Spazio occupato, calcolato solo quando serve (leggere le cartelle è lento).
+    @State private var sizeText = ""
     @State private var newName = ""
     @FocusState private var nameFocused: Bool
     @State private var sort: TrackSort = .custom
@@ -284,10 +286,10 @@ struct TrackListScreen: View {
                         Spacer()
                         switch source {
                         case .downloads:
-                            Text("\(allTracks.count) brani · \(formatBytes(Storage.size(of: Storage.downloads)))")
+                            Text("\(allTracks.count) brani · \(sizeText)")
                                 .font(.footnote).foregroundStyle(.secondary)
                         case .locals:
-                            Text("\(allTracks.count) file · \(formatBytes(Storage.size(of: Storage.locals)))")
+                            Text("\(allTracks.count) file · \(sizeText)")
                                 .font(.footnote).foregroundStyle(.secondary)
                         default:
                             DownloadAllButton(tracks: allTracks)
@@ -348,7 +350,19 @@ struct TrackListScreen: View {
             }
         }
         .navigationBarBackButtonHidden(renaming)
-        .onAppear(perform: loadSort)
+        .onAppear {
+            loadSort()
+            updateSize()
+        }
+        .onChange(of: allTracks.count) { _, _ in updateSize() }
+    }
+
+    private func updateSize() {
+        switch source {
+        case .downloads: sizeText = formatBytes(Storage.size(of: Storage.downloads))
+        case .locals: sizeText = formatBytes(Storage.size(of: Storage.locals))
+        default: break
+        }
     }
 
     // MARK: - Nome della playlist (modificabile direttamente qui)

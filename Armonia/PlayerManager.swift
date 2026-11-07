@@ -4,6 +4,14 @@ import SwiftUI
 import MediaPlayer
 import UIKit
 
+/// Tempo di riproduzione, separato dal player: lo osservano solo le barre di avanzamento.
+@MainActor
+final class PlaybackClock: ObservableObject {
+    static let shared = PlaybackClock()
+    @Published var time: Double = 0
+    @Published var duration: Double = 0
+}
+
 @MainActor
 final class PlayerManager: ObservableObject {
     static let shared = PlayerManager()
@@ -12,8 +20,15 @@ final class PlayerManager: ObservableObject {
     @Published private(set) var index: Int = 0
     @Published private(set) var isPlaying = false
     @Published private(set) var isLoading = false
-    @Published private(set) var currentTime: Double = 0
-    @Published private(set) var duration: Double = 0
+    /// Tempo e durata NON sono @Published: cambiano due volte al secondo e farebbero ridisegnare
+    /// tutta l'app. Le barre di avanzamento li leggono da `PlaybackClock`.
+    private(set) var currentTime: Double = 0 {
+        didSet { if abs(clock.time - currentTime) >= 0.25 || currentTime == 0 { clock.time = currentTime } }
+    }
+    private(set) var duration: Double = 0 {
+        didSet { if clock.duration != duration { clock.duration = duration } }
+    }
+    let clock = PlaybackClock.shared
     @Published var errorMessage: String?
     @Published var showFullPlayer = false
     /// Qualità del brano in riproduzione, es. "AAC 128 kbps" o "FLAC · locale".

@@ -30,6 +30,7 @@ struct MiniPlayerBar: View {
             }
             .foregroundStyle(.primary)
             .padding(10)
+            .overlay(alignment: .bottom) { MiniProgressLine().padding(.horizontal, 14) }
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .padding(.horizontal, 8)
             .padding(.bottom, 4)
@@ -44,7 +45,6 @@ struct NowPlayingView: View {
     @EnvironmentObject private var library: LibraryStore
     @Environment(\.dismiss) private var dismiss
 
-    @State private var scrub: Double?
     @State private var showQueue = false
 
     var body: some View {
@@ -132,27 +132,7 @@ struct NowPlayingView: View {
     }
 
     private var progress: some View {
-        let total = max(player.duration, 1)
-        let value = min(scrub ?? player.currentTime, total)
-        return VStack(spacing: 4) {
-            Slider(
-                value: Binding(get: { value }, set: { scrub = $0 }),
-                in: 0...total,
-                onEditingChanged: { editing in
-                    if !editing, let s = scrub {
-                        player.seek(to: s)
-                        scrub = nil
-                    }
-                }
-            )
-            HStack {
-                Text(formatTime(value))
-                Spacer()
-                Text(player.duration > 0 ? "-" + formatTime(player.duration - value) : (player.current?.duration ?? ""))
-            }
-            .font(.caption.monospacedDigit())
-            .foregroundStyle(.secondary)
-        }
+        PlaybackProgress()
     }
 
     private var isPodcast: Bool { player.current?.isPodcast == true }
@@ -264,5 +244,53 @@ struct QueueView: View {
                 ToolbarItem(placement: .confirmationAction) { Button("Fine") { dismiss() } }
             }
         }
+    }
+}
+
+
+/// Barra di avanzamento: è l'unica parte che si aggiorna mentre la musica scorre.
+struct PlaybackProgress: View {
+    @EnvironmentObject private var player: PlayerManager
+    @ObservedObject private var clock = PlaybackClock.shared
+    @State private var scrub: Double?
+
+    var body: some View {
+        let total = max(clock.duration, 1)
+        let value = min(scrub ?? clock.time, total)
+        VStack(spacing: 4) {
+            Slider(
+                value: Binding(get: { value }, set: { scrub = $0 }),
+                in: 0...total,
+                onEditingChanged: { editing in
+                    if !editing, let s = scrub {
+                        player.seek(to: s)
+                        scrub = nil
+                    }
+                }
+            )
+            HStack {
+                Text(formatTime(value))
+                Spacer()
+                Text(clock.duration > 0 ? "-" + formatTime(clock.duration - value) : (player.current?.duration ?? ""))
+            }
+            .font(.caption.monospacedDigit())
+            .foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// Sottile linea di avanzamento sotto il mini player.
+struct MiniProgressLine: View {
+    @ObservedObject private var clock = PlaybackClock.shared
+
+    var body: some View {
+        GeometryReader { g in
+            let f = clock.duration > 0 ? min(clock.time / clock.duration, 1) : 0
+            Capsule().fill(Color.white.opacity(0.15))
+                .overlay(alignment: .leading) {
+                    Capsule().fill(Color.accentColor).frame(width: g.size.width * f)
+                }
+        }
+        .frame(height: 2)
     }
 }

@@ -6,10 +6,14 @@ import SwiftUI
 /// salvati in un file JSON sul telefono.
 @MainActor
 final class LibraryStore: ObservableObject {
-    @Published var favorites: [Track] = [] { didSet { save() } }
+    @Published var favorites: [Track] = [] { didSet { favoriteIDs = Set(favorites.map(\.id)); save() } }
     @Published var recents: [Track] = [] { didSet { save() } }
     @Published var playlists: [Playlist] = [] { didSet { save() } }
-    @Published var downloads: [Track] = [] { didSet { save() } }
+    @Published var downloads: [Track] = [] { didSet { downloadedIDs = Set(downloads.map(\.id)); save() } }
+
+    /// Insiemi per controlli istantanei (ogni riga di ogni lista li usa).
+    private var favoriteIDs = Set<String>()
+    private var downloadedIDs = Set<String>()
     @Published var locals: [Track] = [] { didSet { save() } }
 
     let fileURL = URL.documentsDirectory.appendingPathComponent("libreria.json")
@@ -68,7 +72,7 @@ final class LibraryStore: ObservableObject {
 
     // MARK: - Preferiti e recenti
 
-    func isFavorite(_ t: Track) -> Bool { favorites.contains { $0.id == t.id } }
+    func isFavorite(_ t: Track) -> Bool { favoriteIDs.contains(t.id) }
 
     func toggleFavorite(_ t: Track) {
         if isFavorite(t) {
@@ -89,11 +93,11 @@ final class LibraryStore: ObservableObject {
     // MARK: - Download e file locali
 
     func isDownloaded(_ t: Track) -> Bool {
-        t.isLocal || downloads.contains { $0.id == t.id }
+        t.isLocal || downloadedIDs.contains(t.id)
     }
 
     func markDownloaded(_ t: Track) {
-        guard !downloads.contains(where: { $0.id == t.id }) else { return }
+        guard !downloadedIDs.contains(t.id) else { return }
         downloads.insert(t, at: 0)
     }
 
