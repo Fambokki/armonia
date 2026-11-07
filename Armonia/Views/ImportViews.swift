@@ -226,6 +226,14 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    NavigationLink {
+                        DiagnosticsView()
+                    } label: {
+                        Label("Diagnostica alta qualità", systemImage: "stethoscope")
+                    }
+                }
+
+                Section {
                     qualityPicker("Download", selection: $downloads.quality)
                 } header: {
                     Text("Qualità dei download")

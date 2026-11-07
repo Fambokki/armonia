@@ -301,6 +301,7 @@ final class PlayerManager: ObservableObject {
         loadTask = Task { [weak self] in
             do {
                 var stream = try await Innertube.shared.stream(for: track.id, quality: quality)
+                var fallbackNote = stream.note.map { "Alta qualità non disponibile: " + $0 }
                 if stream.isOpus {
                     do {
                         let file = try await OpusCache.shared.file(for: track.id, info: stream)
@@ -310,12 +311,14 @@ final class PlayerManager: ObservableObject {
                     } catch is CancellationError {
                         return
                     } catch {
-                        // Conversione non riuscita: si ascolta in AAC.
+                        // Conversione non riuscita: si ascolta in AAC, ma lo si dice.
+                        fallbackNote = "Conversione Opus non riuscita: " + error.localizedDescription
                         stream = try await Innertube.shared.stream(for: track.id, quality: .normal)
                     }
                 }
                 guard !Task.isCancelled, let self, self.current?.id == track.id else { return }
                 self.qualityLabel = stream.label
+                if let fallbackNote { self.errorMessage = fallbackNote }
                 let asset = AVURLAsset(url: stream.url,
                                        options: ["AVURLAssetHTTPHeaderFieldsKey": ["User-Agent": stream.userAgent]])
                 let item = AVPlayerItem(asset: asset)

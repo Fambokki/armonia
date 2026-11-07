@@ -15,6 +15,10 @@ struct StreamInfo: Sendable {
     var isOpus = false
     /// Descrizione della qualità, es. "AAC 128 kbps".
     var label = ""
+    /// Client di YouTube che ha fornito il flusso (per la diagnostica).
+    var client = ""
+    /// Se è stata chiesta l'alta qualità ma si è dovuto ripiegare: il motivo.
+    var note: String?
 }
 
 enum InnertubeError: LocalizedError {
@@ -198,6 +202,7 @@ actor Innertube {
         }
 
         var reasons: [String] = []
+        var opusNotes: [String] = []
         for c in playerClients {
             var client: [String: Any] = ["clientName": c.name, "clientVersion": c.version, "hl": "it", "gl": "IT"]
             for (k, v) in c.extra { client[k] = v }
@@ -276,13 +281,23 @@ actor Innertube {
                     reasons.append("\(c.name): flusso protetto")
                     continue
                 }
+                if quality == .high && !candidates.contains(where: { $0.isOpus }) {
+                    opusNotes.append("\(c.name): Opus non offerto")
+                }
                 var codes: [Int] = []
                 for cand in candidates.prefix(4) {
                     let (code, total) = await probe(cand.url, userAgent: c.userAgent)
+                    if cand.isOpus && !(code == 200 || code == 206) {
+                        opusNotes.append("\(c.name): Opus rifiutato (\(code < 0 ? "rete" : String(code)))")
+                    }
                     if code == 200 || code == 206 {
-                        let info = StreamInfo(url: cand.url, userAgent: c.userAgent,
+                        var info = StreamInfo(url: cand.url, userAgent: c.userAgent,
                                               contentLength: total ?? cand.length,
                                               isHLS: cand.isHLS, isOpus: cand.isOpus, label: cand.label)
+                        info.client = c.name
+                        if quality == .high && !cand.isOpus {
+                            info.note = opusNotes.isEmpty ? "Opus non disponibile" : opusNotes.joined(separator: " · ")
+                        }
                         streamCache[cacheKey] = CachedStream(info: info, date: Date())
                         return info
                     }
@@ -295,6 +310,44 @@ actor Innertube {
         }
         if forDownload && reasons.isEmpty { throw InnertubeError.notDownloadable }
         throw InnertubeError.unplayable(reasons.isEmpty ? "nessun client disponibile" : reasons.joined(separator: " · "))
+    }
+
+    // MARK: - Diagnostica
+
+    /// Elenco dei formati audio che ogni client riceve per un video.
+    func formatsReport(for videoId: String) async -> [String] {
+        await loadRemoteConfigIfNeeded()
+        var lines: [String] = []
+        for c in playerClients {
+            var client: [String: Any] = ["clientName": c.name, "clientVersion": c.version, "hl": "it", "gl": "IT"]
+            for (k, v) in c.extra { client[k] = v }
+            if let visitorData { client["visitorData"] = visitorData }
+            let body: [String: Any] = ["context": ["client": client], "videoId": videoId,
+                                       "contentCheckOk": true, "racyCheckOk": true]
+            let headers = ["User-Agent": c.userAgent, "X-YouTube-Client-Name": c.nameId,
+                           "X-YouTube-Client-Version": c.version, "Origin": "https://www.youtube.com"]
+            guard let json = try? await post("https://www.youtube.com/youtubei/v1/player?prettyPrint=false",
+                                             body: body, headers: headers) else {
+                lines.append("\(c.name): richiesta fallita")
+                continue
+            }
+            let ps = json["playabilityStatus"] as? [String: Any]
+            let status = ps?["status"] as? String ?? "?"
+            let sd = json["streamingData"] as? [String: Any]
+            let formats = (sd?["adaptiveFormats"] as? [[String: Any]]) ?? []
+            let audio = formats.filter { (($0["mimeType"] as? String) ?? "").hasPrefix("audio/") }
+            var parts: [String] = []
+            for f in audio {
+                let mime = (f["mimeType"] as? String) ?? ""
+                let codec = mime.contains("opus") ? "Opus" : (mime.contains("mp4a") ? "AAC" : mime)
+                let kbps = ((f["averageBitrate"] as? Int) ?? (f["bitrate"] as? Int) ?? 0) / 1000
+                let itag = f["itag"] as? Int ?? 0
+                let direct = f["url"] is String ? "" : " (cifrato)"
+                parts.append("\(codec) \(kbps)k [\(itag)]\(direct)")
+            }
+            lines.append("\(c.name): \(status) · " + (parts.isEmpty ? "nessun audio" : parts.joined(separator: ", ")))
+        }
+        return lines
     }
 
     // MARK: - Ricerca completa (artisti, album, brani, playlist)
