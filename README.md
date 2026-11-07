@@ -6,6 +6,7 @@ Client musicale personale per iPhone, in stile BitChord: cerca e ascolta il cata
 
 ## Cosa fa (v0.2)
 
+- Home in stile YouTube Music: categorie, scorciatoie, mix basati sui tuoi ascolti, scelte rapide e caroselli
 - Ricerca completa: brani, artisti, album e playlist
 - Pagine artista (brani più ascoltati, album, singoli, artisti simili) e album
 - Riproduzione in background, controlli nella schermata di blocco, Centro di Controllo e cuffie

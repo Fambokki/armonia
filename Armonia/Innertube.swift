@@ -289,6 +289,33 @@ actor Innertube {
         return JSON.sections(json, carousels: false)
     }
 
+    // MARK: - Home
+
+    func home(params: String? = nil) async throws -> HomeFeed {
+        await loadRemoteConfigIfNeeded()
+        var body: [String: Any] = ["context": musicContext(), "browseId": "FEmusic_home"]
+        if let params { body["params"] = params }
+        let json = try await post("https://music.youtube.com/youtubei/v1/browse?prettyPrint=false",
+                                  body: body, headers: musicHeaders())
+        return JSON.homeFeed(json)
+    }
+
+    func homeMore(_ c: FeedContinuation) async throws -> HomeFeed {
+        var body: [String: Any] = ["context": musicContext()]
+        var url = "https://music.youtube.com/youtubei/v1/browse?prettyPrint=false"
+        switch c {
+        case .legacy(let t):
+            let e = t.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? t
+            url += "&ctoken=\(e)&continuation=\(e)&type=next"
+        case .modern(let t):
+            body["continuation"] = t
+        }
+        let json = try await post(url, body: body, headers: musicHeaders())
+        var feed = JSON.homeFeed(json)
+        feed.chips = []
+        return feed
+    }
+
     // MARK: - Pagine (artista, album, playlist)
 
     func browse(_ target: BrowseTarget) async throws -> BrowsePage {

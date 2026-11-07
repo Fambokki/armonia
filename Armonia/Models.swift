@@ -86,6 +86,8 @@ struct BrowseSection: Identifiable, Hashable {
     var more: BrowseTarget?
     /// true = carosello orizzontale, false = lista verticale
     var isCarousel: Bool
+    /// Righe per colonna nei caroselli di brani (es. "Scelte rapide" = 4).
+    var rows: Int = 1
 
     var tracks: [Track] {
         items.compactMap { if case .track(let t) = $0 { return t } else { return nil } }
@@ -108,6 +110,25 @@ struct BrowsePage {
         var seen = Set<String>()
         return sections.flatMap(\.tracks).filter { seen.insert($0.id).inserted }
     }
+}
+
+// MARK: - Home
+
+struct HomeChip: Identifiable, Hashable {
+    var id: String { title }
+    let title: String
+    let params: String?
+}
+
+enum FeedContinuation: Hashable {
+    case legacy(String)   // ctoken nell'URL
+    case modern(String)   // "continuation" nel corpo della richiesta
+}
+
+struct HomeFeed {
+    var sections: [BrowseSection]
+    var chips: [HomeChip]
+    var continuation: FeedContinuation?
 }
 
 // MARK: - Cartelle dell'app

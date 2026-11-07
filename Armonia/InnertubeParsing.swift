@@ -52,7 +52,11 @@ extension JSON {
             if let be = firstValue(h?["moreContentButton"] ?? [String: Any](), key: "browseEndpoint") as? [String: Any] {
                 more = target(be, title: title)
             }
-            return BrowseSection(title: title, items: items(s["contents"]), more: more, isCarousel: carousels)
+            var rows = 1
+            if let n = s["numItemsPerColumn"] as? String, let v = Int(n) { rows = v }
+            else if let v = s["numItemsPerColumn"] as? Int { rows = v }
+            return BrowseSection(title: title, items: items(s["contents"]), more: more,
+                                 isCarousel: carousels, rows: max(1, rows))
 
         case "gridRenderer":
             let h = (s["header"] as? [String: Any])?["gridHeaderRenderer"] as? [String: Any]
@@ -113,7 +117,36 @@ extension JSON {
         if let vid = (nav?["watchEndpoint"] as? [String: Any])?["videoId"] as? String {
             return .track(Track(id: vid, title: title, artist: artistFrom(subtitle), thumbnail: thumb))
         }
+        // I "Mix" a volte aprono direttamente la riproduzione: li si apre come playlist.
+        if let pid = (nav?["watchPlaylistEndpoint"] as? [String: Any])?["playlistId"] as? String {
+            return .collection(MusicCollection(browseId: "VL" + pid, params: nil, title: title,
+                                               subtitle: subtitle, thumbnail: thumb, kind: .playlist))
+        }
         return nil
+    }
+
+    // MARK: - Home
+
+    static func homeFeed(_ json: [String: Any]) -> HomeFeed {
+        var chips: [HomeChip] = []
+        collect(json, key: "chipCloudChipRenderer") { c in
+            guard let title = text(c["text"]) else { return }
+            let be = (c["navigationEndpoint"] as? [String: Any])?["browseEndpoint"] as? [String: Any]
+            chips.append(HomeChip(title: title, params: be?["params"] as? String))
+        }
+        var cont: FeedContinuation?
+        if let d = firstValue(json, key: "nextContinuationData") as? [String: Any],
+           let t = d["continuation"] as? String {
+            cont = .legacy(t)
+        } else {
+            collect(json, key: "continuationItemRenderer") { r in
+                if cont == nil, let cmd = firstValue(r, key: "continuationCommand") as? [String: Any],
+                   let t = cmd["token"] as? String {
+                    cont = .modern(t)
+                }
+            }
+        }
+        return HomeFeed(sections: sections(json, carousels: true), chips: chips, continuation: cont)
     }
 
     private static func cardItem(_ s: [String: Any]) -> BrowseItem? {

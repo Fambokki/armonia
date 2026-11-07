@@ -107,7 +107,23 @@ struct SectionView: View {
 
     var body: some View {
         Section {
-            if section.isCarousel {
+            if section.isCarousel && section.rows > 1 {
+                // "Scelte rapide": colonne di brani che scorrono in orizzontale.
+                let gridRows = Array(repeating: GridItem(.fixed(56), spacing: 6), count: section.rows)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHGrid(rows: gridRows, spacing: 16) {
+                        ForEach(section.items) { item in
+                            QuickPickCell(item: item, siblings: section.tracks)
+                                .frame(width: 300, alignment: .leading)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .scrollTargetLayout()
+                }
+                .scrollTargetBehavior(.viewAligned)
+                .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 8, trailing: 0))
+                .listRowSeparator(.hidden)
+            } else if section.isCarousel {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(alignment: .top, spacing: 14) {
                         ForEach(section.items) { item in
@@ -150,6 +166,55 @@ struct SectionView: View {
                 }
                 .textCase(nil)
             }
+        }
+    }
+}
+
+/// Riga compatta usata nelle "Scelte rapide" della Home.
+struct QuickPickCell: View {
+    let item: BrowseItem
+    let siblings: [Track]
+
+    @EnvironmentObject private var player: PlayerManager
+
+    var body: some View {
+        switch item {
+        case .track(let t):
+            HStack(spacing: 10) {
+                Button {
+                    player.startRadio(from: t)
+                } label: {
+                    HStack(spacing: 10) {
+                        ArtworkView(url: t.artworkURL, corner: 4).frame(width: 50, height: 50)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(t.title).font(.subheadline).lineLimit(1)
+                                .foregroundStyle(player.current?.id == t.id ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
+                            Text(t.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                Menu {
+                    Button { player.playNext(t) } label: { Label("Riproduci dopo", systemImage: "text.insert") }
+                    Button { player.addToQueue(t) } label: { Label("Aggiungi in coda", systemImage: "text.append") }
+                } label: {
+                    Image(systemName: "ellipsis").foregroundStyle(.secondary).frame(width: 28, height: 44)
+                }
+            }
+        case .collection(let c):
+            NavigationLink(value: c.target) {
+                HStack(spacing: 10) {
+                    ArtworkView(url: c.artworkURL, corner: c.kind == .artist ? 25 : 4).frame(width: 50, height: 50)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(c.title).font(.subheadline).lineLimit(1)
+                        Text(c.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+            .buttonStyle(.plain)
         }
     }
 }

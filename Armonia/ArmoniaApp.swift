@@ -27,6 +27,10 @@ struct RootView: View {
 
     var body: some View {
         TabView {
+            NavigationStack { HomeView() }
+                .safeAreaInset(edge: .bottom) { MiniPlayerBar() }
+                .tabItem { Label("Home", systemImage: "house.fill") }
+
             NavigationStack { SearchView() }
                 .safeAreaInset(edge: .bottom) { MiniPlayerBar() }
                 .tabItem { Label("Cerca", systemImage: "magnifyingglass") }
