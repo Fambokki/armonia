@@ -123,6 +123,9 @@ actor Innertube {
         return (http.statusCode, total)
     }
 
+    private var visitorData: String?
+    private var streamCache: [String: CachedStream] = [:]
+
     // MARK: - Ricerca
 
     func search(_ query: String) async throws -> [Track] {

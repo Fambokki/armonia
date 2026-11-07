@@ -31,8 +31,9 @@ jobs:
             -destination 'generic/platform=iOS' \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            build | tee build.log | grep -E "error:|warning: .*deprecated|BUILD" || true
-          test -d build/Build/Products/Release-iphoneos/Armonia.app
+            build > build.log 2>&1 || { grep -E "error:" build.log | sort -u; exit 1; }
+          grep -E "BUILD SUCCEEDED" build.log
+          test -f build/Build/Products/Release-iphoneos/Armonia.app/Armonia
 
       - name: Crea il file .ipa
         run: |
