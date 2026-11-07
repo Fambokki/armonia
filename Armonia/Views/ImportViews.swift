@@ -221,7 +221,7 @@ struct SettingsView: View {
                     Text("Qualità in streaming")
                 } footer: {
                     Text(player.streamQuality == .high
-                         ? "Alta: Opus a circa 160 kbps, il formato migliore che YouTube offre senza Premium. Ogni brano parte dopo 1–3 secondi (viene scaricato e preparato), il successivo è già pronto. Se un brano non è disponibile in Opus si usa l'AAC."
+                         ? "Alta: Opus tra 130 e 160 kbps a seconda del brano, il formato migliore che YouTube offre senza Premium. I brani scaricati in AAC restano in AAC finché non li riscarichi. Ogni brano parte dopo 1–3 secondi (viene scaricato e preparato), il successivo è già pronto. Se un brano non è disponibile in Opus si usa l'AAC."
                          : "Normale è l'AAC a circa 128 kbps. Risparmio dati usa circa 48 kbps, utile con poca connessione.")
                 }
 
@@ -235,6 +235,13 @@ struct SettingsView: View {
 
                 Section {
                     qualityPicker("Download", selection: $downloads.quality)
+                    if downloads.upgradableCount > 0 {
+                        Button {
+                            downloads.upgradeDownloads()
+                        } label: {
+                            Label("Riscarica \(downloads.upgradableCount) brani in alta qualità", systemImage: "arrow.triangle.2.circlepath")
+                        }
+                    }
                 } header: {
                     Text("Qualità dei download")
                 } footer: {

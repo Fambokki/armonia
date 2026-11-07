@@ -90,8 +90,20 @@ final class DownloadManager: ObservableObject {
 
     func isQueued(_ t: Track) -> Bool { progress[t.id] != nil }
 
-    func download(_ tracks: [Track]) {
-        for t in tracks where !t.isLocal && progress[t.id] == nil && !(library?.isDownloaded(t) ?? false) {
+    /// Brani scaricati in AAC che si possono riscaricare in Opus.
+    var upgradableCount: Int {
+        (library?.downloads ?? []).filter { !$0.isPodcast && Storage.downloadedFile(for: $0.id)?.pathExtension == "m4a" }.count
+    }
+
+    /// Riscarica in alta qualità (Opus) i brani già scaricati in AAC.
+    func upgradeDownloads() {
+        quality = .high
+        let list = (library?.downloads ?? []).filter { !$0.isPodcast && Storage.downloadedFile(for: $0.id)?.pathExtension == "m4a" }
+        download(list, force: true)
+    }
+
+    func download(_ tracks: [Track], force: Bool = false) {
+        for t in tracks where !t.isLocal && progress[t.id] == nil && (force || !(library?.isDownloaded(t) ?? false)) {
             pending.append(t)
             cancelled.remove(t.id)
             progress[t.id] = 0

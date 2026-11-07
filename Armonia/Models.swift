@@ -153,7 +153,7 @@ enum AudioQuality: String, CaseIterable, Identifiable {
         switch self {
         case .low: return "AAC · circa 48 kbps"
         case .normal: return "AAC · circa 128 kbps"
-        case .high: return "Opus · circa 160 kbps"
+        case .high: return "Opus · 130–160 kbps (il massimo di YouTube)"
         }
     }
 
