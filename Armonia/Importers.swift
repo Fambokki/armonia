@@ -114,12 +114,31 @@ enum SpotifyImporter {
         return (name, songs)
     }
 
-    /// Legge un CSV esportato da Exportify (exportify.app) o simili: colonne "Track Name" e "Artist Name(s)".
+    /// Nomi delle colonne di Exportify in tutte le lingue in cui traduce il file.
+    private static let titleHeaders: Set<String> = [
+        "track name", "name", "title", "titolo", "nome della traccia", "track-name", "nombre de la canción",
+        "nom du titre", "nome da faixa", "nummernaam", "låtens namn", "parça adı", "όνομα κομματιού",
+        "トラック名", "歌名", "曲目名称", "曲目名稱", "اسم الأغنية"
+    ]
+    private static let artistHeaders: Set<String> = [
+        "artist name(s)", "artist", "artists", "artista", "artisti", "nome dell'artista", "künstlername(n)",
+        "nombre(s) del artista", "nom(s) de l'artiste", "nome(s) do artista", "naam van artiest",
+        "artistens namn", "sanatçı adı", "όνομα/τα καλλιτέχνη", "アーティスト名", "artist 名", "艺人名称",
+        "藝人名稱", "أسماء الفنانين"
+    ]
+
+    /// Legge un CSV esportato da Exportify (exportify.app) o simili, in qualsiasi lingua.
     static func parseCSV(_ text: String) -> [ImportedSong] {
-        let rows = csvRows(text)
-        guard let header = rows.first?.map({ $0.lowercased() }) else { return [] }
-        let titleCol = header.firstIndex { $0 == "track name" || $0 == "name" || $0 == "title" || $0 == "titolo" }
-        let artistCol = header.firstIndex { $0.hasPrefix("artist name") || $0 == "artist" || $0 == "artists" || $0 == "artista" }
+        let rows = csvRows(text).filter { !($0.count == 1 && $0[0].isEmpty) }
+        guard let header = rows.first?.map({ $0.trimmingCharacters(in: .whitespaces).lowercased() }) else { return [] }
+        var titleCol = header.firstIndex { titleHeaders.contains($0) }
+        var artistCol = header.firstIndex { artistHeaders.contains($0) || $0.hasPrefix("artist name") }
+
+        // Riserva: il formato di Exportify ha sempre URI, titolo, URI artisti, nomi artisti nelle prime colonne.
+        if titleCol == nil, let first = rows.dropFirst().first, first.first?.hasPrefix("spotify:") == true, first.count > 3 {
+            titleCol = 1
+            artistCol = 3
+        }
         guard let titleCol else { return [] }
         return rows.dropFirst().compactMap { r in
             guard r.indices.contains(titleCol), !r[titleCol].isEmpty else { return nil }
