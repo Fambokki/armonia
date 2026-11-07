@@ -313,7 +313,8 @@ struct TrackListScreen: View {
         }
         .listStyle(.plain)
         .environment(\.editMode, $editMode)
-        .navigationTitle(library.title(for: source))
+        .navigationTitle(playlistID == nil ? library.title(for: source) : "")
+        .navigationBarTitleDisplayMode(playlistID == nil ? .automatic : .inline)
         .withMiniPlayer()
         .searchable(text: $filter, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Cerca in questa lista")
         .overlay {
@@ -335,10 +336,6 @@ struct TrackListScreen: View {
                             .disabled(cleanName.isEmpty)
                     }
                 } else {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button { startRename() } label: { Image(systemName: "pencil") }
-                            .accessibilityLabel("Rinomina playlist")
-                    }
                     ToolbarItem(placement: .topBarTrailing) {
                         Button(editMode.isEditing ? "Fine" : "Modifica") {
                             if !editMode.isEditing && sort != .custom { setSort(.custom) }
@@ -374,7 +371,7 @@ struct TrackListScreen: View {
     private var titleHeader: some View {
         if renaming {
             TextField("Nome della playlist", text: $newName, axis: .vertical)
-                .font(.title2.weight(.bold))
+                .font(.largeTitle.weight(.bold))
                 .lineLimit(1...5)
                 .focused($nameFocused)
                 .submitLabel(.done)
@@ -389,12 +386,13 @@ struct TrackListScreen: View {
         } else {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(library.title(for: source))
-                    .font(.title2.weight(.bold))
+                    .font(.largeTitle.weight(.bold))
                     .fixedSize(horizontal: false, vertical: true)
-                Image(systemName: "pencil")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
                 Spacer(minLength: 0)
+                Image(systemName: "pencil")
+                    .font(.title3)
+                    .foregroundStyle(.tint)
+                    .accessibilityLabel("Rinomina playlist")
             }
             .contentShape(Rectangle())
             .onTapGesture { startRename() }
