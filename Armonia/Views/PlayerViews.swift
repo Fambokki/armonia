@@ -138,7 +138,39 @@ struct NowPlayingView: View {
     private var isPodcast: Bool { player.current?.isPodcast == true }
 
     private var controls: some View {
-        HStack(spacing: 46) {
+        HStack(spacing: 0) {
+            if !isPodcast {
+                Button { player.toggleShuffle() } label: {
+                    Image(systemName: "shuffle")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(player.shuffleEnabled ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                        .frame(width: 44, height: 44)
+                        .overlay(alignment: .bottom) { if player.shuffleEnabled { activeDot } }
+                }
+                .accessibilityLabel(player.shuffleEnabled ? "Casuale attiva" : "Casuale")
+                Spacer(minLength: 0)
+            }
+            mainControls
+            if !isPodcast {
+                Spacer(minLength: 0)
+                Button { player.cycleRepeat() } label: {
+                    Image(systemName: player.repeatMode == .one ? "repeat.1" : "repeat")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(player.repeatMode == .off ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tint))
+                        .frame(width: 44, height: 44)
+                        .overlay(alignment: .bottom) { if player.repeatMode != .off { activeDot } }
+                }
+                .accessibilityLabel(["off": "Ripeti", "all": "Ripeti tutto", "one": "Ripeti brano"][player.repeatMode.rawValue] ?? "Ripeti")
+            }
+        }
+    }
+
+    private var activeDot: some View {
+        Circle().fill(Color.accentColor).frame(width: 4, height: 4).offset(y: 2)
+    }
+
+    private var mainControls: some View {
+        HStack(spacing: isPodcast ? 46 : 34) {
             if isPodcast {
                 Button { player.skip(by: -15) } label: {
                     Image(systemName: "gobackward.15").font(.system(size: 30))
@@ -209,9 +241,23 @@ struct QueueView: View {
         NavigationStack {
             List {
                 Section {
+                    HStack(spacing: 12) {
+                        Button { player.toggleShuffle() } label: {
+                            Label("Casuale", systemImage: "shuffle").frame(maxWidth: .infinity)
+                        }
+                        .tint(player.shuffleEnabled ? .accentColor : .gray)
+                        Button { player.cycleRepeat() } label: {
+                            Label(player.repeatMode == .one ? "Ripeti brano" : (player.repeatMode == .all ? "Ripeti tutto" : "Ripeti"),
+                                  systemImage: player.repeatMode == .one ? "repeat.1" : "repeat")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .tint(player.repeatMode == .off ? .gray : .accentColor)
+                    }
+                    .buttonStyle(.bordered)
+                    .listRowSeparator(.hidden)
                     Toggle("Radio automatica", isOn: $player.autoRadio)
                 } footer: {
-                    Text("Quando la coda sta per finire aggiunge brani simili, come fa Spotify.")
+                    Text("Radio automatica: quando la coda sta per finire aggiunge brani simili. Si sospende mentre è attivo \"Ripeti\".")
                 }
 
                 Section("Coda") {

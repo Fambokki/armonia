@@ -47,6 +47,15 @@ final class PlayerManager: ObservableObject {
             }
         }
     }
+    enum RepeatMode: String, CaseIterable {
+        case off, all, one
+    }
+
+    /// Modalità casuale: la coda viene mescolata, l'ordine originale resta in `originalQueue`.
+    @Published private(set) var shuffleEnabled: Bool = UserDefaults.standard.bool(forKey: "shuffleEnabled")
+    @Published private(set) var repeatMode: RepeatMode = RepeatMode(rawValue: UserDefaults.standard.string(forKey: "repeatMode") ?? "") ?? .off
+    private var originalQueue: [Track] = []
+
     @Published var autoRadio: Bool = UserDefaults.standard.object(forKey: "autoRadio") as? Bool ?? true {
         didSet { UserDefaults.standard.set(autoRadio, forKey: "autoRadio") }
     }
@@ -109,9 +118,64 @@ final class PlayerManager: ObservableObject {
         radioTask = nil
         pendingAdvance = false
         failures = 0
-        queue = tracks
-        index = i
+        originalQueue = tracks
+        if shuffleEnabled {
+            var rest = tracks
+            let first = rest.remove(at: i)
+            queue = [first] + rest.shuffled()
+            index = 0
+        } else {
+            queue = tracks
+            index = i
+        }
         loadCurrent()
+    }
+
+    /// "Casuale" delle liste: attiva la modalità casuale e parte da un brano a caso.
+    func playShuffled(_ tracks: [Track]) {
+        guard !tracks.isEmpty else { return }
+        setShuffle(true)
+        play(tracks, startAt: Int.random(in: 0..<tracks.count))
+    }
+
+    func toggleShuffle() { setShuffle(!shuffleEnabled) }
+
+    func setShuffle(_ on: Bool) {
+        guard on != shuffleEnabled else { return }
+        shuffleEnabled = on
+        UserDefaults.standard.set(on, forKey: "shuffleEnabled")
+        guard !queue.isEmpty else { updateShuffleRepeatCommands(); return }
+        if on {
+            // Il brano attuale resta in testa, il resto si mescola.
+            originalQueue = queue
+            let cur = queue[index]
+            var rest = queue
+            rest.remove(at: index)
+            queue = [cur] + rest.shuffled()
+            index = 0
+        } else {
+            // Si torna all'ordine originale, ripartendo dal brano attuale.
+            let cur = current
+            let extra = queue.filter { t in !originalQueue.contains { $0.id == t.id } }
+            queue = originalQueue + extra
+            index = cur.flatMap { c in queue.firstIndex { $0.id == c.id } } ?? 0
+        }
+        updateShuffleRepeatCommands()
+    }
+
+    /// Ripeti: no → tutta la coda → solo questo brano → no.
+    func cycleRepeat() {
+        switch repeatMode {
+        case .off: setRepeat(.all)
+        case .all: setRepeat(.one)
+        case .one: setRepeat(.off)
+        }
+    }
+
+    func setRepeat(_ m: RepeatMode) {
+        repeatMode = m
+        UserDefaults.standard.set(m.rawValue, forKey: "repeatMode")
+        updateShuffleRepeatCommands()
     }
 
     /// Riproduce il brano e riempie la coda con brani simili.
@@ -121,11 +185,19 @@ final class PlayerManager: ObservableObject {
     }
 
     func playNext(_ track: Track) {
-        if queue.isEmpty { play([track]) } else { queue.insert(track, at: index + 1) }
+        if queue.isEmpty { play([track]) } else {
+            queue.insert(track, at: index + 1)
+            if shuffleEnabled, let cur = current, let j = originalQueue.firstIndex(where: { $0.id == cur.id }) {
+                originalQueue.insert(track, at: j + 1)
+            }
+        }
     }
 
     func addToQueue(_ track: Track) {
-        if queue.isEmpty { play([track]) } else { queue.append(track) }
+        if queue.isEmpty { play([track]) } else {
+            queue.append(track)
+            if shuffleEnabled { originalQueue.append(track) }
+        }
     }
 
     func togglePlay() {
@@ -176,6 +248,8 @@ final class PlayerManager: ObservableObject {
 
     func removeFromQueue(at offsets: IndexSet) {
         for i in offsets.sorted(by: >) where i != index && queue.indices.contains(i) {
+            let id = queue[i].id
+            if let j = originalQueue.firstIndex(where: { $0.id == id }) { originalQueue.remove(at: j) }
             queue.remove(at: i)
             if i < index { index -= 1 }
         }
@@ -231,6 +305,16 @@ final class PlayerManager: ObservableObject {
         if index + 1 < queue.count {
             index += 1
             loadCurrent()
+        } else if repeatMode != .off, !queue.isEmpty {
+            // Ripeti la coda: in casuale la si rimescola a ogni giro.
+            if shuffleEnabled && queue.count > 1 {
+                let last = queue[index]
+                var q = queue.shuffled()
+                if q.first?.id == last.id { q.swapAt(0, q.count - 1) }
+                queue = q
+            }
+            index = 0
+            loadCurrent()
         } else if autoRadio, let cur = current {
             pendingAdvance = true
             extendWithRadio(from: cur)
@@ -266,7 +350,7 @@ final class PlayerManager: ObservableObject {
             try? AVAudioSession.sharedInstance().setActive(true)
             startPlayer()
             if track.isPodcast { qualityLabel = "Podcast · scaricato" }
-            if autoRadio && !track.isLocal && !track.isPodcast && index >= queue.count - 2 { extendWithRadio(from: track) }
+            if autoRadio && repeatMode == .off && !track.isLocal && !track.isPodcast && index >= queue.count - 2 { extendWithRadio(from: track) }
             return
         }
         if track.isLocal {
@@ -295,7 +379,7 @@ final class PlayerManager: ObservableObject {
         // Alta qualità già pronta in cache: parte subito, senza rete.
         if quality == .high, let cached = OpusCache.cachedFile(for: track.id) {
             playFile(cached, label: OpusCache.label(for: track.id))
-            if autoRadio && index >= queue.count - 2 { extendWithRadio(from: track) }
+            if autoRadio && repeatMode == .off && index >= queue.count - 2 { extendWithRadio(from: track) }
             return
         }
         loadTask = Task { [weak self] in
@@ -332,7 +416,7 @@ final class PlayerManager: ObservableObject {
             }
         }
 
-        if autoRadio && index >= queue.count - 2 {
+        if autoRadio && repeatMode == .off && index >= queue.count - 2 {
             extendWithRadio(from: track)
         }
     }
@@ -363,8 +447,14 @@ final class PlayerManager: ObservableObject {
             forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                if let t = self?.current, t.isPodcast { PodcastStore.shared.setPlayed(t, true) }
-                self?.next()
+                guard let self else { return }
+                if let t = self.current, t.isPodcast { PodcastStore.shared.setPlayed(t, true) }
+                if self.repeatMode == .one, self.current?.isPodcast != true {
+                    self.seek(to: 0)
+                    self.startPlayer()
+                } else {
+                    self.next()
+                }
             }
         }
     }
@@ -437,6 +527,7 @@ final class PlayerManager: ObservableObject {
             let existing = Set(self.queue.map(\.id))
             let fresh = related.filter { !existing.contains($0.id) }
             self.queue.append(contentsOf: fresh.prefix(25))
+            if self.shuffleEnabled { self.originalQueue.append(contentsOf: fresh.prefix(25)) }
             if self.pendingAdvance {
                 self.pendingAdvance = false
                 if self.index + 1 < self.queue.count {
@@ -465,6 +556,12 @@ final class PlayerManager: ObservableObject {
            AVAudioSession.InterruptionOptions(rawValue: options).contains(.shouldResume) {
             resume()
         }
+    }
+
+    private func updateShuffleRepeatCommands() {
+        let c = MPRemoteCommandCenter.shared()
+        c.changeShuffleModeCommand.currentShuffleType = shuffleEnabled ? .items : .off
+        c.changeRepeatModeCommand.currentRepeatType = repeatMode == .one ? .one : (repeatMode == .all ? .all : .off)
     }
 
     /// Schermata di blocco: per i podcast salti di 15/30 s al posto di brano precedente/successivo.
@@ -510,6 +607,19 @@ final class PlayerManager: ObservableObject {
             Task { @MainActor in self?.previous() }
             return .success
         }
+        c.changeShuffleModeCommand.addTarget { [weak self] event in
+            guard let e = event as? MPChangeShuffleModeCommandEvent else { return .commandFailed }
+            let on = e.shuffleType != .off
+            Task { @MainActor in self?.setShuffle(on) }
+            return .success
+        }
+        c.changeRepeatModeCommand.addTarget { [weak self] event in
+            guard let e = event as? MPChangeRepeatModeCommandEvent else { return .commandFailed }
+            let mode: RepeatMode = e.repeatType == .one ? .one : (e.repeatType == .all ? .all : .off)
+            Task { @MainActor in self?.setRepeat(mode) }
+            return .success
+        }
+        DispatchQueue.main.async { [weak self] in self?.updateShuffleRepeatCommands() }
         c.changePlaybackPositionCommand.addTarget { [weak self] event in
             guard let e = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
             let t = e.positionTime

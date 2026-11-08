@@ -272,7 +272,7 @@ struct TrackListScreen: View {
                             Label("Riproduci", systemImage: "play.fill").frame(maxWidth: .infinity)
                         }
                         Button {
-                            player.play(shown.shuffled())
+                            player.playShuffled(shown)
                         } label: {
                             Label("Casuale", systemImage: "shuffle").frame(maxWidth: .infinity)
                         }

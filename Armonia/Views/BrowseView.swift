@@ -72,7 +72,7 @@ struct BrowsePageView: View {
                     Button { player.play(tracks) } label: {
                         Label("Riproduci", systemImage: "play.fill").frame(maxWidth: .infinity)
                     }
-                    Button { player.play(tracks.shuffled()) } label: {
+                    Button { player.playShuffled(tracks) } label: {
                         Label("Casuale", systemImage: "shuffle").frame(maxWidth: .infinity)
                     }
                 }
