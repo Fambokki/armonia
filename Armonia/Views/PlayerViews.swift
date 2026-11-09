@@ -50,9 +50,9 @@ struct NowPlayingView: View {
     @State private var dragOffset: CGFloat = 0
 
     var body: some View {
-        let progress = min(max(dragOffset / 320, 0), 1)
+        let dragProgress = min(max(dragOffset / 320, 0), 1)
         ZStack {
-            PlayerBackdrop(url: player.current?.artworkURL, progress: progress)
+            PlayerBackdrop(url: player.current?.artworkURL, progress: dragProgress)
 
             VStack(spacing: 22) {
                 Button { dismiss() } label: {
@@ -389,7 +389,7 @@ struct PlayerBackdrop: View {
                 }
                 BlurredArtwork(url: url)
                     .equatable()
-                    .opacity(1 - 0.75 * progress)
+                    .opacity(Double(1 - 0.75 * progress))
             }
             .frame(width: g.size.width, height: g.size.height)
             .clipShape(shape)
