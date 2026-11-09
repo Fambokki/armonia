@@ -46,6 +46,8 @@ struct NowPlayingView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var showQueue = false
+    /// Spostamento verso il basso mentre si trascina per chiudere.
+    @State private var dragOffset: CGFloat = 0
 
     var body: some View {
         ZStack {
@@ -128,11 +130,40 @@ struct NowPlayingView: View {
             .padding(.horizontal, 28)
             .padding(.bottom, 12)
         }
+        .offset(y: dragOffset)
+        .gesture(dismissDrag)
         .sheet(isPresented: $showQueue) { QueueView() }
     }
 
     private var progress: some View {
         PlaybackProgress()
+    }
+
+    /// Trascinando verso il basso il player scende con il dito; oltre una certa soglia si chiude.
+    private var dismissDrag: some Gesture {
+        DragGesture(minimumDistance: 12, coordinateSpace: .global)
+            .onChanged { v in
+                let dy = v.translation.height
+                guard dy > 0 || dragOffset > 0 else { return }
+                // Solo movimenti soprattutto verticali (lo slider del brano resta libero).
+                guard dragOffset > 0 || abs(dy) > abs(v.translation.width) * 1.2 else { return }
+                dragOffset = max(0, dy)
+            }
+            .onEnded { v in
+                let shouldClose = v.translation.height > 140 || v.predictedEndTranslation.height > 420
+                if shouldClose && dragOffset > 0 {
+                    let h = UIScreen.main.bounds.height
+                    withAnimation(.easeOut(duration: 0.22)) { dragOffset = h }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
+                        var t = Transaction()
+                        t.disablesAnimations = true
+                        withTransaction(t) { player.showFullPlayer = false }
+                        dragOffset = 0
+                    }
+                } else {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { dragOffset = 0 }
+                }
+            }
     }
 
     private var isPodcast: Bool { player.current?.isPodcast == true }

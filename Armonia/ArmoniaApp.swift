@@ -31,6 +31,8 @@ struct RootView: View {
         tabs
             .fullScreenCover(isPresented: $player.showFullPlayer) {
                 NowPlayingView()
+                    // Sfondo trasparente: trascinando il player verso il basso si vede l'app sotto.
+                    .presentationBackground(.clear)
             }
     }
 
