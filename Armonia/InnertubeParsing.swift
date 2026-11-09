@@ -7,13 +7,44 @@ import Foundation
 extension JSON {
     private static let shelfKeys: Set<String> = [
         "musicShelfRenderer", "musicPlaylistShelfRenderer", "musicCarouselShelfRenderer",
-        "gridRenderer", "musicCardShelfRenderer"
+        "gridRenderer", "musicCardShelfRenderer",
+        // pezzi successivi delle liste lunghe
+        "gridContinuation", "musicShelfContinuation", "musicPlaylistShelfContinuation"
+    ]
+
+    private static let itemKeys: Set<String> = [
+        "musicResponsiveListItemRenderer", "musicTwoRowItemRenderer",
+        "musicTwoColumnItemRenderer", "musicMultiRowListItemRenderer"
     ]
 
     static func sections(_ root: Any, carousels: Bool) -> [BrowseSection] {
         var out: [BrowseSection] = []
         walk(root, carousels: carousels, into: &out)
-        return out.filter { !$0.items.isEmpty }
+        out = out.filter { !$0.items.isEmpty }
+        if out.isEmpty {
+            // Formato non riconosciuto: si raccolgono comunque tutti gli elementi trovati nella pagina.
+            var loose: [[String: Any]] = []
+            collectItems(root, into: &loose)
+            let list = items(loose)
+            if !list.isEmpty {
+                out = [BrowseSection(title: "", items: list, more: nil, isCarousel: false)]
+            }
+        }
+        return out
+    }
+
+    private static func collectItems(_ node: Any, into out: inout [[String: Any]]) {
+        if let d = node as? [String: Any] {
+            for (k, v) in d {
+                if itemKeys.contains(k), v is [String: Any] {
+                    out.append([k: v])
+                } else if k != "header" && k != "frameworkUpdates" && k != "responseContext" {
+                    collectItems(v, into: &out)
+                }
+            }
+        } else if let a = node as? [Any] {
+            for v in a { collectItems(v, into: &out) }
+        }
     }
 
     private static func walk(_ node: Any, carousels: Bool, into out: inout [BrowseSection]) {
@@ -58,9 +89,12 @@ extension JSON {
             return BrowseSection(title: title, items: items(s["contents"]), more: more,
                                  isCarousel: carousels, rows: max(1, rows))
 
-        case "gridRenderer":
+        case "gridRenderer", "gridContinuation":
             let h = (s["header"] as? [String: Any])?["gridHeaderRenderer"] as? [String: Any]
             return BrowseSection(title: text(h?["title"]) ?? "", items: items(s["items"]), more: nil, isCarousel: false)
+
+        case "musicShelfContinuation", "musicPlaylistShelfContinuation":
+            return BrowseSection(title: "", items: items(s["contents"]), more: nil, isCarousel: false)
 
         case "musicCardShelfRenderer":
             var list: [BrowseItem] = []
@@ -83,10 +117,28 @@ extension JSON {
                 item = responsiveItem(r)
             } else if let r = e["musicTwoRowItemRenderer"] as? [String: Any] {
                 item = twoRowItem(r)
+            } else if let r = (e["musicTwoColumnItemRenderer"] ?? e["musicMultiRowListItemRenderer"]) as? [String: Any] {
+                item = genericItem(r)
             }
             if let item, seen.insert(item.id).inserted { out.append(item) }
         }
         return out
+    }
+
+    /// Elementi meno comuni (episodi, liste a due colonne): titolo, sottotitolo, copertina, destinazione.
+    private static func genericItem(_ r: [String: Any]) -> BrowseItem? {
+        guard let title = text(r["title"]) else { return nil }
+        let subtitle = text(r["subtitle"]) ?? text(r["description"]) ?? ""
+        let thumb = thumbnail(r["thumbnail"] ?? r["thumbnailRenderer"])
+        let nav = (r["navigationEndpoint"] ?? r["onTap"]) as? [String: Any] ?? [:]
+        if let be = firstValue(nav, key: "browseEndpoint") as? [String: Any], let id = be["browseId"] as? String {
+            return .collection(MusicCollection(browseId: id, params: be["params"] as? String, title: title,
+                                               subtitle: subtitle, thumbnail: thumb, kind: kind(be, id: id)))
+        }
+        if let w = firstValue(r, key: "watchEndpoint") as? [String: Any], let vid = w["videoId"] as? String {
+            return .track(Track(id: vid, title: title, artist: artistFrom(subtitle), thumbnail: thumb))
+        }
+        return nil
     }
 
     private static func responsiveItem(_ r: [String: Any]) -> BrowseItem? {
@@ -126,6 +178,21 @@ extension JSON {
     }
 
     // MARK: - Home
+
+    static func continuation(_ json: [String: Any]) -> FeedContinuation? {
+        if let d = firstValue(json, key: "nextContinuationData") as? [String: Any],
+           let t = d["continuation"] as? String {
+            return .legacy(t)
+        }
+        var cont: FeedContinuation?
+        collect(json, key: "continuationItemRenderer") { r in
+            if cont == nil, let cmd = firstValue(r, key: "continuationCommand") as? [String: Any],
+               let t = cmd["token"] as? String {
+                cont = .modern(t)
+            }
+        }
+        return cont
+    }
 
     static func homeFeed(_ json: [String: Any]) -> HomeFeed {
         var chips: [HomeChip] = []
@@ -228,6 +295,7 @@ extension JSON {
                 }
             }
         }
-        return BrowsePage(title: title, subtitle: subtitle, thumbnail: thumb, kind: kind, sections: secs)
+        return BrowsePage(title: title, subtitle: subtitle, thumbnail: thumb, kind: kind, sections: secs,
+                          continuation: continuation(json))
     }
 }

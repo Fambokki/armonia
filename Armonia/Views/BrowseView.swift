@@ -18,6 +18,15 @@ struct BrowsePageView: View {
                 ForEach(page.sections) { section in
                     SectionView(section: section, isSearch: false)
                 }
+                if page.continuation != nil {
+                    HStack { Spacer(); ProgressView(); Spacer() }
+                        .listRowSeparator(.hidden)
+                        .onAppear { Task { await loadMore() } }
+                } else if page.sections.isEmpty {
+                    ContentUnavailableView("Nessun contenuto", systemImage: "music.note.list",
+                                           description: Text("YouTube Music non ha restituito elementi per questa pagina."))
+                        .listRowSeparator(.hidden)
+                }
             } else if let error {
                 ContentUnavailableView("Pagina non disponibile", systemImage: "wifi.exclamationmark",
                                        description: Text(error))
@@ -48,13 +57,37 @@ struct BrowsePageView: View {
         }
     }
 
+    @State private var loadingMore = false
+
+    /// Pezzo successivo: i brani in più si aggiungono all'ultima lista, le sezioni nuove in fondo.
+    private func loadMore() async {
+        guard !loadingMore, let c = page?.continuation else { return }
+        loadingMore = true
+        defer { loadingMore = false }
+        guard let more = try? await Innertube.shared.browseMore(c), !more.sections.isEmpty else {
+            page?.continuation = nil
+            return
+        }
+        for s in more.sections {
+            if s.title.isEmpty, let last = page?.sections.indices.last, page?.sections[last].isCarousel == false {
+                let existing = Set(page?.sections[last].items.map(\.id) ?? [])
+                page?.sections[last].items += s.items.filter { !existing.contains($0.id) }
+            } else {
+                page?.sections.append(s)
+            }
+        }
+        page?.continuation = more.continuation
+    }
+
     @ViewBuilder
     private func header(_ page: BrowsePage) -> some View {
         let tracks = page.allTracks
         VStack(spacing: 14) {
-            ArtworkView(url: page.artworkURL, corner: page.kind == .artist ? 120 : 12)
-                .frame(width: 220, height: 220)
-                .shadow(color: .black.opacity(0.4), radius: 16, y: 8)
+            if page.artworkURL != nil {
+                ArtworkView(url: page.artworkURL, corner: page.kind == .artist ? 120 : 12, pixelSize: 700)
+                    .frame(width: 220, height: 220)
+                    .shadow(color: .black.opacity(0.4), radius: 16, y: 8)
+            }
             VStack(spacing: 4) {
                 Text(page.title)
                     .font(.title2.weight(.bold))

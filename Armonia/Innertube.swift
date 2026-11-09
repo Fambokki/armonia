@@ -398,6 +398,12 @@ actor Innertube {
         return JSON.page(json, fallbackTitle: target.title, browseId: target.browseId)
     }
 
+    /// Pezzo successivo di una pagina lunga (stesso formato della Home).
+    func browseMore(_ c: FeedContinuation) async throws -> (sections: [BrowseSection], continuation: FeedContinuation?) {
+        let feed = try await homeMore(c)
+        return (feed.sections, feed.continuation)
+    }
+
     // MARK: - Rete
 
     private func musicContext() -> [String: Any] {

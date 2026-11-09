@@ -6,8 +6,8 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "0.9.3"
-    CURRENT_PROJECT_VERSION: "22"
+    MARKETING_VERSION: "0.9.4"
+    CURRENT_PROJECT_VERSION: "23"
 targets:
   Armonia:
     type: application

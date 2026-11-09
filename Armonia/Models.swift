@@ -20,6 +20,8 @@ struct Track: Identifiable, Codable, Hashable {
             return Storage.locals.appendingPathComponent(String(thumbnail.dropFirst("local-art:".count)))
         }
         var s = thumbnail
+        if s.hasPrefix("//") { s = "https:" + s }          // YouTube a volte omette il protocollo
+        else if s.hasPrefix("http://") { s = "https://" + s.dropFirst(7) }
         if let r = s.range(of: "=w\\d+-h\\d+", options: .regularExpression) {
             s.replaceSubrange(r, with: "=w544-h544")
         }
@@ -103,6 +105,8 @@ struct BrowsePage {
     var thumbnail: String?
     var kind: CollectionKind
     var sections: [BrowseSection]
+    /// Altri contenuti da caricare scorrendo (liste lunghe, "Vedi tutti").
+    var continuation: FeedContinuation? = nil
 
     var artworkURL: URL? {
         Track(id: "", title: "", artist: "", thumbnail: thumbnail).artworkURL
