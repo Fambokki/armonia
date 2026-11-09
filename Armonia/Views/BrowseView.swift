@@ -15,14 +15,16 @@ struct BrowsePageView: View {
             if let page {
                 header(page)
                     .listRowSeparator(.hidden)
-                ForEach(page.sections) { section in
+                ForEach(page.sections.isEmpty && !target.fallback.isEmpty
+                        ? [BrowseSection(title: "", items: target.fallback, more: nil, isCarousel: false)]
+                        : page.sections) { section in
                     SectionView(section: section, isSearch: false)
                 }
                 if page.continuation != nil {
                     HStack { Spacer(); ProgressView(); Spacer() }
                         .listRowSeparator(.hidden)
                         .onAppear { Task { await loadMore() } }
-                } else if page.sections.isEmpty {
+                } else if page.sections.isEmpty && target.fallback.isEmpty {
                     ContentUnavailableView("Nessun contenuto", systemImage: "music.note.list",
                                            description: Text("YouTube Music non ha restituito elementi per questa pagina."))
                         .listRowSeparator(.hidden)
@@ -38,7 +40,7 @@ struct BrowsePageView: View {
             }
         }
         .listStyle(.plain)
-        .navigationTitle(page?.title ?? target.title)
+        .navigationTitle(page == nil ? target.title : "")
         .withMiniPlayer()
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
@@ -193,7 +195,9 @@ struct SectionView: View {
                         .foregroundStyle(.primary)
                     Spacer()
                     if let more = section.more {
-                        NavigationLink(value: more) {
+                        NavigationLink(value: BrowseTarget(browseId: more.browseId, params: more.params,
+                                                           title: more.title.isEmpty ? section.title : more.title,
+                                                           fallback: section.items)) {
                             Text("Vedi tutti").font(.subheadline)
                         }
                     }

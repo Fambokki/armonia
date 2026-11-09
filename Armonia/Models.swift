@@ -50,6 +50,9 @@ struct BrowseTarget: Hashable {
     let browseId: String
     var params: String? = nil
     var title: String = ""
+    /// Elementi già visti nel carosello di partenza: si mostrano se la pagina completa arriva vuota
+    /// (succede con le sezioni "per te", che senza account Google non hanno una pagina propria).
+    var fallback: [BrowseItem] = []
 }
 
 enum CollectionKind: String, Hashable {
