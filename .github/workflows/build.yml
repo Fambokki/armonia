@@ -14,6 +14,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Usa l'Xcode più recente (serve l'SDK di iOS 26+ per Liquid Glass)
+        run: |
+          ls -d /Applications/Xcode*.app || true
+          latest=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sed -E 's/.*Xcode_([0-9.]+).*\.app/\1 &/' | grep -v -i beta | sort -V | tail -1 | cut -d' ' -f2)
+          if [ -n "$latest" ]; then sudo xcode-select -s "$latest/Contents/Developer"; fi
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
       - name: Installa XcodeGen
         run: brew install xcodegen
 

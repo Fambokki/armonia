@@ -232,14 +232,14 @@ struct PodcastDetailView: View {
                           systemImage: store.isSubscribed(current) ? "checkmark" : "plus")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
+                .glassButton(prominent: true)
 
                 Button {
                     if let first = feed?.episodes.first { player.play([first.track(show: current)]) }
                 } label: {
                     Label("Ultimo episodio", systemImage: "play.fill").frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.bordered)
+                .glassButton()
                 .disabled(feed?.episodes.isEmpty ?? true)
             }
             .controlSize(.large)

@@ -76,7 +76,7 @@ struct BrowsePageView: View {
                         Label("Casuale", systemImage: "shuffle").frame(maxWidth: .infinity)
                     }
                 }
-                .buttonStyle(.bordered)
+                .glassButton()
                 .controlSize(.large)
 
                 if page.kind != .artist {

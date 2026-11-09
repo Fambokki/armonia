@@ -103,7 +103,7 @@ struct LibraryView: View {
                     Text("Importo i file… \(importing.done)/\(importing.total)")
                 }
                 .padding(12)
-                .background(.ultraThinMaterial, in: Capsule())
+                .glassCapsule()
                 .padding(.bottom, 90)
             }
         }
@@ -277,7 +277,7 @@ struct TrackListScreen: View {
                             Label("Casuale", systemImage: "shuffle").frame(maxWidth: .infinity)
                         }
                     }
-                    .buttonStyle(.bordered)
+                    .glassButton()
                     .controlSize(.large)
 
                     HStack {

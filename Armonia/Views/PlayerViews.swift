@@ -31,7 +31,7 @@ struct MiniPlayerBar: View {
             .foregroundStyle(.primary)
             .padding(10)
             .overlay(alignment: .bottom) { MiniProgressLine().padding(.horizontal, 14) }
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .glassRect(14, interactive: true)
             .padding(.horizontal, 8)
             .padding(.bottom, 4)
             .contentShape(Rectangle())
@@ -97,9 +97,9 @@ struct NowPlayingView: View {
                 if !player.qualityLabel.isEmpty {
                     Text(player.qualityLabel)
                         .font(.caption2.weight(.semibold))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(.white.opacity(0.12), in: Capsule())
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .glassCapsule()
                         .foregroundStyle(.secondary)
                 }
 
@@ -186,10 +186,11 @@ struct NowPlayingView: View {
                         ProgressView().controlSize(.large)
                     } else {
                         Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                            .font(.system(size: 46))
+                            .font(.system(size: 34))
                     }
                 }
-                .frame(width: 64, height: 64)
+                .frame(width: 78, height: 78)
+                .glassCircle(interactive: true)
             }
             if isPodcast {
                 Button { player.skip(by: 30) } label: {
@@ -220,9 +221,9 @@ struct NowPlayingView: View {
         } label: {
             Text(speedText(player.playbackRate))
                 .font(.subheadline.weight(.semibold).monospacedDigit())
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(.white.opacity(0.12), in: Capsule())
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .glassCapsule(interactive: true)
         }
         .foregroundStyle(.secondary)
     }
@@ -253,7 +254,7 @@ struct QueueView: View {
                         }
                         .tint(player.repeatMode == .off ? .gray : .accentColor)
                     }
-                    .buttonStyle(.bordered)
+                    .glassButton()
                     .listRowSeparator(.hidden)
                     Toggle("Radio automatica", isOn: $player.autoRadio)
                 } footer: {

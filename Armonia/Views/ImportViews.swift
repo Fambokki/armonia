@@ -326,7 +326,7 @@ struct ExportifySheet: View {
                         Text(message)
                             .font(.footnote)
                             .padding(10)
-                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+                            .glassRect(10)
                             .padding()
                     }
                 }

@@ -60,7 +60,7 @@ struct HomeView: View {
                         .font(.subheadline)
                     Text(error).font(.caption).foregroundStyle(.secondary)
                     Button("Riprova") { Task { await load() } }
-                        .buttonStyle(.bordered)
+                        .glassButton()
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 20)
@@ -98,9 +98,8 @@ struct HomeView: View {
                             .font(.subheadline.weight(.medium))
                             .padding(.horizontal, 14)
                             .padding(.vertical, 7)
-                            .background(selected ? AnyShapeStyle(Color.white) : AnyShapeStyle(Color.white.opacity(0.12)),
-                                        in: Capsule())
-                            .foregroundStyle(selected ? Color.black : Color.primary)
+                            .foregroundStyle(selected ? Color.white : Color.primary)
+                            .glassCapsule(tint: selected ? Color.accentColor : nil, interactive: true)
                     }
                     .buttonStyle(.plain)
                 }
@@ -183,8 +182,8 @@ struct HomeView: View {
             Spacer(minLength: 0)
         }
         .frame(height: 56)
-        .background(Color.white.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .glassRect(10, interactive: true)
     }
 
     // MARK: - Caricamento
