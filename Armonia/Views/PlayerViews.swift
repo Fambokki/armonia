@@ -50,12 +50,9 @@ struct NowPlayingView: View {
     @State private var dragOffset: CGFloat = 0
 
     var body: some View {
+        let progress = min(max(dragOffset / 320, 0), 1)
         ZStack {
-            Color.black.ignoresSafeArea()
-            ArtworkView(url: player.current?.artworkURL, corner: 0)
-                .blur(radius: 70)
-                .opacity(0.55)
-                .ignoresSafeArea()
+            PlayerBackdrop(url: player.current?.artworkURL, progress: progress)
 
             VStack(spacing: 22) {
                 Button { dismiss() } label: {
@@ -67,7 +64,7 @@ struct NowPlayingView: View {
 
                 Spacer(minLength: 0)
 
-                ArtworkView(url: player.current?.artworkURL, corner: 14)
+                ArtworkView(url: player.current?.artworkURL, corner: 14, pixelSize: 1000)
                     .aspectRatio(1, contentMode: .fit)
                     .shadow(color: .black.opacity(0.5), radius: 24, y: 12)
                     .scaleEffect(player.isPlaying ? 1 : 0.86)
@@ -155,10 +152,11 @@ struct NowPlayingView: View {
                     let h = UIScreen.main.bounds.height
                     withAnimation(.easeOut(duration: 0.22)) { dragOffset = h }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
+                        // Il player è già fuori schermo: si chiude senza la seconda animazione di sistema.
+                        // dragOffset NON si azzera qui (riportarlo a 0 lo faceva riapparire per un istante).
                         var t = Transaction()
                         t.disablesAnimations = true
                         withTransaction(t) { player.showFullPlayer = false }
-                        dragOffset = 0
                     }
                 } else {
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { dragOffset = 0 }
@@ -370,5 +368,48 @@ struct MiniProgressLine: View {
                 }
         }
         .frame(height: 2)
+    }
+}
+
+
+/// Sfondo del player: copertina sfocata. Mentre lo si trascina giù diventa una lastra di
+/// Liquid Glass con gli angoli arrotondati, attraverso cui si vede l'app sotto.
+struct PlayerBackdrop: View {
+    let url: URL?
+    /// 0 = player aperto, 1 = trascinato del tutto
+    let progress: CGFloat
+
+    var body: some View {
+        GeometryReader { g in
+            let radius: CGFloat = progress > 0 ? 24 + 26 * progress : 0
+            let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+            ZStack {
+                if progress > 0 {
+                    Color.clear.glassRect(radius)
+                }
+                BlurredArtwork(url: url)
+                    .equatable()
+                    .opacity(1 - 0.75 * progress)
+            }
+            .frame(width: g.size.width, height: g.size.height)
+            .clipShape(shape)
+        }
+        .ignoresSafeArea()
+    }
+}
+
+/// Copertina sfocata: non dipende dal trascinamento, quindi non viene ridisegnata a ogni movimento.
+struct BlurredArtwork: View, Equatable {
+    let url: URL?
+
+    var body: some View {
+        ZStack {
+            Color.black
+            ArtworkView(url: url, corner: 0, pixelSize: 200)
+                .blur(radius: 50)
+                .opacity(0.6)
+                .scaleEffect(1.2)
+        }
+        .drawingGroup()
     }
 }

@@ -111,8 +111,9 @@ final class PlayerManager: ObservableObject {
 
     // MARK: - Comandi pubblici
 
-    func play(_ tracks: [Track], startAt i: Int = 0) {
+    func play(_ tracks: [Track], startAt i: Int = 0, open: Bool = true) {
         guard tracks.indices.contains(i) else { return }
+        if open { showFullPlayer = true }
         generation += 1
         radioTask?.cancel()
         radioTask = nil
@@ -185,7 +186,7 @@ final class PlayerManager: ObservableObject {
     }
 
     func playNext(_ track: Track) {
-        if queue.isEmpty { play([track]) } else {
+        if queue.isEmpty { play([track], open: false) } else {
             queue.insert(track, at: index + 1)
             if shuffleEnabled, let cur = current, let j = originalQueue.firstIndex(where: { $0.id == cur.id }) {
                 originalQueue.insert(track, at: j + 1)
@@ -194,7 +195,7 @@ final class PlayerManager: ObservableObject {
     }
 
     func addToQueue(_ track: Track) {
-        if queue.isEmpty { play([track]) } else {
+        if queue.isEmpty { play([track], open: false) } else {
             queue.append(track)
             if shuffleEnabled { originalQueue.append(track) }
         }

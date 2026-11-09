@@ -153,7 +153,11 @@ final class DownloadManager: ObservableObject {
         let flags = self.cancelled
         let cancelled: () -> Bool = { flags.contains(id) }
         let report: (Double) -> Void = { [weak self] p in
-            Task { @MainActor in if self?.progress[id] != nil { self?.progress[id] = p } }
+            Task { @MainActor in
+                // Solo ogni 5%: ogni aggiornamento ridisegna le righe che mostrano il download.
+                guard let self, let old = self.progress[id], p - old >= 0.05 || p >= 1 else { return }
+                self.progress[id] = p
+            }
         }
 
         // Episodi dei podcast: file audio diretto.

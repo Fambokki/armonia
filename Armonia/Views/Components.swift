@@ -1,28 +1,37 @@
 import SwiftUI
 import AVKit
 
-struct ArtworkView: View {
+struct ArtworkView: View, Equatable {
     let url: URL?
     var corner: CGFloat = 6
+    /// Lato massimo in pixel a cui decodificare l'immagine (miniature piccole = meno memoria).
+    var pixelSize: Int = 300
+
+    @State private var image: UIImage?
+
+    static func == (a: ArtworkView, b: ArtworkView) -> Bool {
+        a.url == b.url && a.corner == b.corner && a.pixelSize == b.pixelSize
+    }
 
     var body: some View {
+        // Se l'immagine è già in memoria la si mostra subito, senza un fotogramma vuoto.
+        let shown = image ?? url.flatMap { ImageCache.shared.cached($0, size: pixelSize) }
         Color.gray.opacity(0.22)
             .overlay {
-                Image(systemName: "music.note")
-                    .foregroundStyle(.secondary)
-            }
-            .overlay {
-                if let url {
-                    AsyncImage(url: url) { phase in
-                        if let image = phase.image {
-                            image.resizable().scaledToFill()
-                        } else {
-                            Color.clear
-                        }
-                    }
+                if let shown {
+                    Image(uiImage: shown).resizable().scaledToFill()
+                } else {
+                    Image(systemName: "music.note").foregroundStyle(.secondary)
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+            .task(id: url) {
+                guard let url else { image = nil; return }
+                if let c = ImageCache.shared.cached(url, size: pixelSize) { image = c; return }
+                image = nil
+                let loaded = await ImageCache.shared.image(for: url, size: pixelSize)
+                if !Task.isCancelled { image = loaded }
+            }
     }
 }
 

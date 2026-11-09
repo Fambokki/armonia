@@ -7,6 +7,10 @@ struct ArmoniaApp: App {
     @StateObject private var downloads = DownloadManager.shared
     @StateObject private var podcasts = PodcastStore.shared
 
+    init() {
+        URLCache.shared = URLCache(memoryCapacity: 48 * 1024 * 1024, diskCapacity: 400 * 1024 * 1024)
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()
