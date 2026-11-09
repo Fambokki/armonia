@@ -76,12 +76,25 @@ struct RootView: View {
             Tab("Cerca", systemImage: "magnifyingglass", role: .search) { TabStack { SearchView() } }
         }
         .tabBarMinimizeBehavior(.onScrollDown)
-        .tabViewBottomAccessory { MiniPlayerAccessory() }
+        .playerAccessory(visible: player.current != nil)
     }
     #endif
 }
 
 #if compiler(>=6.2)
+@available(iOS 26, *)
+private extension View {
+    /// Mini player sopra la barra dei tab, solo quando c'è qualcosa in riproduzione (iOS 26.1+).
+    @ViewBuilder
+    func playerAccessory(visible: Bool) -> some View {
+        if #available(iOS 26.1, *) {
+            tabViewBottomAccessory(isEnabled: visible) { MiniPlayerAccessory() }
+        } else {
+            tabViewBottomAccessory { MiniPlayerAccessory() }
+        }
+    }
+}
+
 /// Mini player dentro la barra dei tab (iOS 26). Si compatta quando la barra si riduce.
 @available(iOS 26, *)
 struct MiniPlayerAccessory: View {
