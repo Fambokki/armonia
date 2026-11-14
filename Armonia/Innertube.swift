@@ -97,6 +97,24 @@ actor Innertube {
             extra: ["deviceMake": "Apple", "deviceModel": "iPhone16,2", "osName": "iPhone", "osVersion": "18.3.2.22D82"]
         ),
     ]
+    /// Client con firma cifrata, usati solo se quelli sopra non danno il brano
+    /// (es. contenuti "destinati ai bambini"). Valori da yt-dlp ("tv_samsung", "tv").
+    private var jsClients: [PlayerClient] = [
+        PlayerClient(
+            name: "TVHTML5",
+            version: "5.20260707",
+            nameId: "7",
+            userAgent: "Mozilla/5.0 (SMART-TV; Linux; Tizen 2.4.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/2.4.0 TV Safari/538.1",
+            extra: ["deviceMake": "Samsung", "deviceModel": "UKS9800", "osName": "Tizen", "osVersion": "2.4.0"]
+        ),
+        PlayerClient(
+            name: "TVHTML5",
+            version: "7.20260707.07.00",
+            nameId: "7",
+            userAgent: "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/25.lts.30.1034943-gold (unlike Gecko), Unknown_TV_Unknown_0/Unknown (Unknown, Unknown)",
+            extra: [:]
+        ),
+    ]
     private var configLoaded = false
 
     /// Scarica clients.json (al massimo una volta per avvio). Se fallisce restano i valori di riserva.
@@ -111,6 +129,8 @@ actor Innertube {
         if let v = obj["musicVersion"] as? String, !v.isEmpty { musicVersion = v }
         let clients = ((obj["playerClients"] as? [[String: Any]]) ?? []).compactMap(PlayerClient.init(json:))
         if !clients.isEmpty { playerClients = clients }
+        let js = ((obj["jsClients"] as? [[String: Any]]) ?? []).compactMap(PlayerClient.init(json:))
+        if !js.isEmpty { jsClients = js }
     }
 
     /// Verifica che il link audio risponda davvero (YouTube a volte dà il link ma poi risponde 403).
@@ -308,8 +328,152 @@ actor Innertube {
                 reasons.append("\(c.name): \(error.localizedDescription)")
             }
         }
+        // Ultimo tentativo: client TV con firma da decifrare (come fa yt-dlp).
+        do {
+            var info = try await streamWithSignature(videoId, quality: quality, forDownload: forDownload)
+            if quality == .high && !info.isOpus && info.note == nil {
+                info.note = opusNotes.isEmpty ? "Opus non disponibile" : opusNotes.joined(separator: " · ")
+            }
+            streamCache[cacheKey] = CachedStream(info: info, date: Date())
+            return info
+        } catch {
+            reasons.append("TV: \(error.localizedDescription)")
+        }
         if forDownload && reasons.isEmpty { throw InnertubeError.notDownloadable }
         throw InnertubeError.unplayable(reasons.isEmpty ? "nessun client disponibile" : reasons.joined(separator: " · "))
+    }
+
+    /// Diagnostica: prova direttamente il client TV con la decifratura delle firme.
+    func signatureReport(for videoId: String) async -> (ok: Bool, text: String) {
+        await loadRemoteConfigIfNeeded()
+        do {
+            let info = try await streamWithSignature(videoId, quality: .high, forDownload: false)
+            return (true, "\(info.label) · \(await SignatureSolver.shared.status())")
+        } catch {
+            return (false, "\(error.localizedDescription) · \(await SignatureSolver.shared.status())")
+        }
+    }
+
+    // MARK: - Flussi con firma cifrata (client TV)
+
+    private struct Cipher {
+        let url: URL
+        let s: String?
+        let sp: String
+        let label: String
+        let isOpus: Bool
+        let length: Int64?
+    }
+
+    private func streamWithSignature(_ videoId: String, quality: AudioQuality, forDownload: Bool) async throws -> StreamInfo {
+        let (playerId, sts) = try await SignatureSolver.shared.currentPlayer()
+        var reasons: [String] = []
+
+        for c in jsClients {
+            var client: [String: Any] = ["clientName": c.name, "clientVersion": c.version, "hl": "it", "gl": "IT",
+                                         "userAgent": c.userAgent]
+            for (k, v) in c.extra { client[k] = v }
+            if let visitorData { client["visitorData"] = visitorData }
+            let body: [String: Any] = [
+                "context": ["client": client],
+                "videoId": videoId,
+                "contentCheckOk": true,
+                "racyCheckOk": true,
+                "playbackContext": ["contentPlaybackContext": [
+                    "html5Preference": "HTML5_PREF_WANTS",
+                    "signatureTimestamp": sts
+                ]]
+            ]
+            let headers = [
+                "User-Agent": c.userAgent,
+                "X-YouTube-Client-Name": c.nameId,
+                "X-YouTube-Client-Version": c.version,
+                "Origin": "https://www.youtube.com",
+                "Referer": "https://www.youtube.com/"
+            ]
+            let json: [String: Any]
+            do {
+                json = try await post("https://www.youtube.com/youtubei/v1/player?prettyPrint=false", body: body, headers: headers)
+            } catch {
+                reasons.append(error.localizedDescription)
+                continue
+            }
+            let ps = json["playabilityStatus"] as? [String: Any]
+            guard (ps?["status"] as? String) == "OK",
+                  let sd = json["streamingData"] as? [String: Any] else {
+                reasons.append((ps?["reason"] as? String) ?? (ps?["status"] as? String) ?? "?")
+                continue
+            }
+
+            // Formati audio in ordine di preferenza, come per gli altri client.
+            let bitrate: ([String: Any]) -> Int = { ($0["bitrate"] as? Int) ?? 0 }
+            let kbps: ([String: Any]) -> Int = { Int((Double(($0["averageBitrate"] as? Int) ?? bitrate($0)) / 1000).rounded()) }
+            let audio = ((sd["adaptiveFormats"] as? [[String: Any]]) ?? [])
+                .filter { (($0["mimeType"] as? String) ?? "").hasPrefix("audio/") }
+            var ordered: [[String: Any]] = []
+            if quality == .high {
+                ordered += audio.filter { (($0["mimeType"] as? String) ?? "").contains("opus") }
+                    .sorted { bitrate($0) > bitrate($1) }.prefix(1)
+            }
+            ordered += audio.filter { (($0["mimeType"] as? String) ?? "").hasPrefix("audio/mp4") }
+                .sorted { quality == .low ? bitrate($0) < bitrate($1) : bitrate($0) > bitrate($1) }
+
+            let ciphers: [Cipher] = ordered.prefix(3).compactMap { f in
+                let isOpus = ((f["mimeType"] as? String) ?? "").contains("opus")
+                let label = (isOpus ? "Opus " : "AAC ") + "\(kbps(f)) kbps"
+                let length = (f["contentLength"] as? String).flatMap { Int64($0) }
+                if let u = (f["url"] as? String).flatMap(URL.init(string:)) {
+                    return Cipher(url: u, s: nil, sp: "sig", label: label, isOpus: isOpus, length: length)
+                }
+                guard let sc = (f["signatureCipher"] ?? f["cipher"]) as? String,
+                      let items = URLComponents(string: "?" + sc)?.queryItems,
+                      let raw = items.first(where: { $0.name == "url" })?.value,
+                      let u = URL(string: raw) else { return nil }
+                return Cipher(url: u, s: items.first(where: { $0.name == "s" })?.value,
+                              sp: items.first(where: { $0.name == "sp" })?.value ?? "signature",
+                              label: label, isOpus: isOpus, length: length)
+            }
+            guard !ciphers.isEmpty else {
+                reasons.append("nessun audio")
+                continue
+            }
+
+            // Si risolvono tutte le sfide in una volta sola.
+            let nValues = ciphers.compactMap { URLComponents(url: $0.url, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == "n" })?.value }
+            let sValues = ciphers.compactMap(\.s)
+            let solved = try await SignatureSolver.shared.solve(playerId: playerId,
+                                                                 n: Array(Set(nValues)), sig: Array(Set(sValues)))
+
+            for cand in ciphers {
+                // Si lavora sui valori già codificati: gli altri parametri restano identici a come li ha firmati YouTube.
+                guard var comps = URLComponents(url: cand.url, resolvingAgainstBaseURL: false) else { continue }
+                var allowed = CharacterSet.alphanumerics
+                allowed.insert(charactersIn: "-._~")
+                func enc(_ v: String) -> String { v.addingPercentEncoding(withAllowedCharacters: allowed) ?? v }
+                var items = comps.percentEncodedQueryItems ?? []
+                if let i = items.firstIndex(where: { $0.name == "n" }),
+                   let v = items[i].value?.removingPercentEncoding, let fixed = solved.n[v] {
+                    items[i].value = enc(fixed)
+                }
+                if let sChallenge = cand.s {
+                    guard let sig = solved.sig[sChallenge] else { continue }
+                    items.append(URLQueryItem(name: cand.sp, value: enc(sig)))
+                }
+                comps.percentEncodedQueryItems = items
+                guard let url = comps.url else { continue }
+                let (code, total) = await probe(url, userAgent: c.userAgent)
+                if code == 200 || code == 206 {
+                    var info = StreamInfo(url: url, userAgent: c.userAgent,
+                                          contentLength: total ?? cand.length,
+                                          isHLS: false, isOpus: cand.isOpus, label: cand.label)
+                    info.client = "TV"
+                    return info
+                }
+                reasons.append("audio rifiutato (\(code < 0 ? "rete" : String(code)))")
+            }
+        }
+        throw InnertubeError.unplayable(reasons.isEmpty ? "nessun risultato" : reasons.joined(separator: ", "))
     }
 
     // MARK: - Diagnostica

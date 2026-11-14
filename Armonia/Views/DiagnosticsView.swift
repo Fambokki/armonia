@@ -87,6 +87,10 @@ struct DiagnosticsView: View {
         let lines = await Innertube.shared.formatsReport(for: t.id)
         add(nil, "Formati offerti da YouTube", lines.joined(separator: "\n"))
 
+        // 1b. Client TV con firma cifrata (riserva per i video che visionOS non riceve)
+        let tv = await Innertube.shared.signatureReport(for: t.id)
+        add(tv.ok, "Riserva client TV (firma decifrata)", tv.text)
+
         // 2. Flusso in alta qualità
         let info: StreamInfo
         do {

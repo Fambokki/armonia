@@ -6,14 +6,16 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "0.9.5"
-    CURRENT_PROJECT_VERSION: "24"
+    MARKETING_VERSION: "0.10.0"
+    CURRENT_PROJECT_VERSION: "25"
 targets:
   Armonia:
     type: application
     platform: iOS
     sources:
       - path: Armonia
+      - path: Resources
+        buildPhase: resources
     info:
       path: Armonia/Info.plist
       properties:

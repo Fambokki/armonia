@@ -57,6 +57,12 @@ L'app lo legge a ogni avvio, quindi basta chiuderla del tutto e riaprirla.
 
 I valori di riserva, usati se `clients.json` non è raggiungibile, sono in `Armonia/Innertube.swift`.
 
+**Video "destinati ai bambini" e altri non disponibili con visionOS:** l'app ripiega sul client TV
+(`jsClients` in `clients.json`), che richiede di decifrare la firma dell'audio. Lo fa il solver di yt-dlp
+([yt-dlp/ejs](https://github.com/yt-dlp/ejs)), eseguito nel motore JavaScript di iOS. L'app scarica
+`solver/armonia-ejs.js` da questo repository a ogni avvio, quindi per aggiornarlo basta sostituire quel file
+con una nuova build di ejs (punto d'ingresso: `globalThis.armoniaSolve(json)`), senza reinstallare l'app.
+
 ## Struttura
 
 ```

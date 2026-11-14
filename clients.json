@@ -26,5 +26,27 @@
         "osVersion": "18.3.2.22D82"
       }
     }
+  ],
+  "_nota_jsClients": "Client usati solo se i playerClients non danno il brano (es. contenuti per bambini). Richiedono la decifratura della firma: solver in solver/armonia-ejs.js (yt-dlp/ejs).",
+  "jsClients": [
+    {
+      "name": "TVHTML5",
+      "version": "5.20260707",
+      "nameId": 7,
+      "userAgent": "Mozilla/5.0 (SMART-TV; Linux; Tizen 2.4.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/2.4.0 TV Safari/538.1",
+      "extra": {
+        "deviceMake": "Samsung",
+        "deviceModel": "UKS9800",
+        "osName": "Tizen",
+        "osVersion": "2.4.0"
+      }
+    },
+    {
+      "name": "TVHTML5",
+      "version": "7.20260707.07.00",
+      "nameId": 7,
+      "userAgent": "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/25.lts.30.1034943-gold (unlike Gecko), Unknown_TV_Unknown_0/Unknown (Unknown, Unknown)",
+      "extra": {}
+    }
   ]
 }
