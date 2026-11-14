@@ -216,11 +216,16 @@ actor Innertube {
 
     /// - quality: .low = AAC più leggero, .normal = AAC migliore, .high = Opus (poi AAC come riserva).
     /// - forDownload: esclude HLS, che non si può salvare come file singolo.
-    func stream(for videoId: String, quality: AudioQuality = .normal, forDownload: Bool = false) async throws -> StreamInfo {
+    func stream(for videoId: String, quality: AudioQuality = .normal, forDownload: Bool = false,
+                signatureFallback: Bool = true) async throws -> StreamInfo {
         let lowQuality = quality == .low
         let cacheKey = videoId + "-" + quality.rawValue + (forDownload ? "-dl" : "")
         if let cached = streamCache[cacheKey], Date().timeIntervalSince(cached.date) < 3600 {
             return cached.info
+        }
+        // Brano già risultato non riproducibile da poco: si risponde subito invece di ritentare tutto.
+        if let bad = unplayable[videoId], Date().timeIntervalSince(bad.date) < 15 * 60 {
+            throw InnertubeError.unplayable(bad.reason)
         }
         await loadRemoteConfigIfNeeded()
 
@@ -337,6 +342,9 @@ actor Innertube {
             }
         }
         // Ultimo tentativo: client TV con firma da decifrare (come fa yt-dlp).
+        if !signatureFallback {
+            throw InnertubeError.unplayable(reasons.joined(separator: " · "))
+        }
         do {
             var info = try await streamWithSignature(videoId, quality: quality, forDownload: forDownload)
             if quality == .high && !info.isOpus && info.note == nil {
@@ -348,7 +356,17 @@ actor Innertube {
             reasons.append(error.localizedDescription)
         }
         if forDownload && reasons.isEmpty { throw InnertubeError.notDownloadable }
-        throw InnertubeError.unplayable(reasons.isEmpty ? "nessun client disponibile" : reasons.joined(separator: " · "))
+        let reason = reasons.isEmpty ? "nessun client disponibile" : reasons.joined(separator: " · ")
+        unplayable[videoId] = (reason, Date())
+        throw InnertubeError.unplayable(reason)
+    }
+
+    private var unplayable: [String: (reason: String, date: Date)] = [:]
+
+    /// true se il brano è appena risultato non riproducibile (per non riproporlo).
+    func isKnownUnplayable(_ videoId: String) -> Bool {
+        guard let bad = unplayable[videoId] else { return false }
+        return Date().timeIntervalSince(bad.date) < 15 * 60
     }
 
     /// Diagnostica: prova direttamente il client TV con la decifratura delle firme.

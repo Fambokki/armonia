@@ -113,6 +113,7 @@ final class PlayerManager: ObservableObject {
 
     func play(_ tracks: [Track], startAt i: Int = 0, open: Bool = true) {
         guard tracks.indices.contains(i) else { return }
+        userChoseCurrent = true
         if open { showFullPlayer = true }
         generation += 1
         radioTask?.cancel()
@@ -222,6 +223,7 @@ final class PlayerManager: ObservableObject {
 
     func next() {
         failures = 0
+        userChoseCurrent = true
         advance()
     }
 
@@ -236,6 +238,7 @@ final class PlayerManager: ObservableObject {
 
     func jump(to i: Int) {
         guard queue.indices.contains(i) else { return }
+        userChoseCurrent = true
         failures = 0
         index = i
         loadCurrent()
@@ -413,6 +416,8 @@ final class PlayerManager: ObservableObject {
                 self.startPlayer()
             } catch {
                 guard !Task.isCancelled, let self, self.current?.id == track.id else { return }
+                if case InnertubeError.unplayable = error, await self.playAlternative(for: track) { return }
+                guard self.current?.id == track.id else { return }
                 self.handleFailure(error.localizedDescription)
             }
         }
@@ -455,6 +460,7 @@ final class PlayerManager: ObservableObject {
                     self.startPlayer()
                 } else {
                     self.next()
+                    self.userChoseCurrent = false   // non l'ha scelto l'utente: se fallisce si può saltare
                 }
             }
         }
@@ -489,15 +495,41 @@ final class PlayerManager: ObservableObject {
         }
     }
 
+    /// true se il brano attuale l'ha scelto l'utente (tocco su un brano, nella coda, avanti/indietro):
+    /// in quel caso, se non si riproduce, NON si salta da soli al successivo.
+    private var userChoseCurrent = false
+
     private func handleFailure(_ message: String) {
         isLoading = false
         errorMessage = message
         failures += 1
-        // Salta automaticamente al brano successivo, ma senza scorrere tutta la coda se è tutto rotto.
+        guard !userChoseCurrent else { return }
+        // Passaggio automatico a fine brano: si salta al successivo, ma senza scorrere tutta la coda se è tutto rotto.
         if failures < 3 && index + 1 < queue.count {
             index += 1
             loadCurrent()
         }
+    }
+
+    /// Se il brano non è disponibile si cerca un'altra versione dello stesso brano (stesso titolo e artista)
+    /// che si possa ascoltare. Si provano solo i metodi veloci.
+    private func playAlternative(for track: Track) async -> Bool {
+        guard let results = try? await Innertube.shared.search("\(track.title) \(track.artist)") else { return false }
+        for alt in results.prefix(4) where alt.id != track.id {
+            if await Innertube.shared.isKnownUnplayable(alt.id) { continue }
+            guard let s = try? await Innertube.shared.stream(for: alt.id, quality: .normal, signatureFallback: false) else { continue }
+            guard current?.id == track.id else { return true }
+            qualityLabel = s.label + " · altra versione"
+            let asset = AVURLAsset(url: s.url, options: ["AVURLAssetHTTPHeaderFieldsKey": ["User-Agent": s.userAgent]])
+            let item = AVPlayerItem(asset: asset)
+            observe(item)
+            player.replaceCurrentItem(with: item)
+            try? AVAudioSession.sharedInstance().setActive(true)
+            startPlayer()
+            errorMessage = "La versione originale non è disponibile: ascolti \"\(alt.title)\" di \(alt.artist)."
+            return true
+        }
+        return false
     }
 
     private func prefetchNext() {
