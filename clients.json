@@ -30,6 +30,13 @@
   "_nota_jsClients": "Client usati solo se i playerClients non danno il brano (es. contenuti per bambini). Richiedono la decifratura della firma: solver in solver/armonia-ejs.js (yt-dlp/ejs).",
   "jsClients": [
     {
+      "name": "WEB_EMBEDDED_PLAYER",
+      "version": "2.20260708.00.00",
+      "nameId": 56,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.5 Safari/605.1.15,gzip(gfe)",
+      "extra": {}
+    },
+    {
       "name": "TVHTML5",
       "version": "5.20260707",
       "nameId": 7,

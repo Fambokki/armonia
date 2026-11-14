@@ -100,6 +100,14 @@ actor Innertube {
     /// Client con firma cifrata, usati solo se quelli sopra non danno il brano
     /// (es. contenuti "destinati ai bambini"). Valori da yt-dlp ("tv_samsung", "tv").
     private var jsClients: [PlayerClient] = [
+        // Player "incorporato" (come su un sito esterno): è quello che yt-dlp usa per i video per bambini.
+        PlayerClient(
+            name: "WEB_EMBEDDED_PLAYER",
+            version: "2.20260708.00.00",
+            nameId: "56",
+            userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.5 Safari/605.1.15,gzip(gfe)",
+            extra: [:]
+        ),
         PlayerClient(
             name: "TVHTML5",
             version: "5.20260707",
@@ -337,7 +345,7 @@ actor Innertube {
             streamCache[cacheKey] = CachedStream(info: info, date: Date())
             return info
         } catch {
-            reasons.append("TV: \(error.localizedDescription)")
+            reasons.append(error.localizedDescription)
         }
         if forDownload && reasons.isEmpty { throw InnertubeError.notDownloadable }
         throw InnertubeError.unplayable(reasons.isEmpty ? "nessun client disponibile" : reasons.joined(separator: " · "))
@@ -356,6 +364,22 @@ actor Innertube {
 
     // MARK: - Flussi con firma cifrata (client TV)
 
+    /// Dalla pagina /embed/ del video: encryptedHostFlags e visitorData (come fa yt-dlp).
+    private func embedPageInfo(_ videoId: String) async -> (flags: String?, visitor: String?) {
+        guard let url = URL(string: "https://www.youtube.com/embed/\(videoId)") else { return (nil, nil) }
+        var req = URLRequest(url: url, timeoutInterval: 12)
+        req.setValue(webUA, forHTTPHeaderField: "User-Agent")
+        req.setValue("https://www.reddit.com/", forHTTPHeaderField: "Referer")
+        guard let (data, _) = try? await URLSession.shared.data(for: req) else { return (nil, nil) }
+        let html = String(decoding: data, as: UTF8.self)
+        func find(_ key: String) -> String? {
+            guard let r = html.range(of: "\"\(key)\":\"([^\"]+)\"", options: .regularExpression) else { return nil }
+            let m = String(html[r])
+            return m.components(separatedBy: "\":\"").last.map { String($0.dropLast()) }
+        }
+        return (find("encryptedHostFlags"), find("VISITOR_DATA"))
+    }
+
     private struct Cipher {
         let url: URL
         let s: String?
@@ -369,39 +393,49 @@ actor Innertube {
         let (playerId, sts) = try await SignatureSolver.shared.currentPlayer()
         var reasons: [String] = []
 
+        // Per il player incorporato servono i dati della pagina /embed/ del video.
+        var embed: (flags: String?, visitor: String?) = (nil, nil)
+        if jsClients.contains(where: { $0.name == "WEB_EMBEDDED_PLAYER" }) {
+            embed = await embedPageInfo(videoId)
+        }
+
         for c in jsClients {
+            let embedded = c.name == "WEB_EMBEDDED_PLAYER"
+            let short = embedded ? "EMBED" : "TV"
             var client: [String: Any] = ["clientName": c.name, "clientVersion": c.version, "hl": "it", "gl": "IT",
                                          "userAgent": c.userAgent]
             for (k, v) in c.extra { client[k] = v }
-            if let visitorData { client["visitorData"] = visitorData }
+            if let v = (embedded ? embed.visitor : nil) ?? visitorData { client["visitorData"] = v }
+            var playback: [String: Any] = ["html5Preference": "HTML5_PREF_WANTS", "signatureTimestamp": sts]
+            if embedded, let f = embed.flags { playback["encryptedHostFlags"] = f }
+            var context: [String: Any] = ["client": client]
+            if embedded { context["thirdParty"] = ["embedUrl": "https://www.reddit.com/"] }
             let body: [String: Any] = [
-                "context": ["client": client],
+                "context": context,
                 "videoId": videoId,
                 "contentCheckOk": true,
                 "racyCheckOk": true,
-                "playbackContext": ["contentPlaybackContext": [
-                    "html5Preference": "HTML5_PREF_WANTS",
-                    "signatureTimestamp": sts
-                ]]
+                "playbackContext": ["contentPlaybackContext": playback]
             ]
-            let headers = [
+            var headers = [
                 "User-Agent": c.userAgent,
                 "X-YouTube-Client-Name": c.nameId,
                 "X-YouTube-Client-Version": c.version,
                 "Origin": "https://www.youtube.com",
-                "Referer": "https://www.youtube.com/"
+                "Referer": embedded ? "https://www.reddit.com/" : "https://www.youtube.com/"
             ]
+            if embedded, let v = embed.visitor { headers["X-Goog-Visitor-Id"] = v }
             let json: [String: Any]
             do {
                 json = try await post("https://www.youtube.com/youtubei/v1/player?prettyPrint=false", body: body, headers: headers)
             } catch {
-                reasons.append(error.localizedDescription)
+                reasons.append("\(short): \(error.localizedDescription)")
                 continue
             }
             let ps = json["playabilityStatus"] as? [String: Any]
             guard (ps?["status"] as? String) == "OK",
                   let sd = json["streamingData"] as? [String: Any] else {
-                reasons.append((ps?["reason"] as? String) ?? (ps?["status"] as? String) ?? "?")
+                reasons.append("\(short): " + ((ps?["reason"] as? String) ?? (ps?["status"] as? String) ?? "?"))
                 continue
             }
 
@@ -467,10 +501,10 @@ actor Innertube {
                     var info = StreamInfo(url: url, userAgent: c.userAgent,
                                           contentLength: total ?? cand.length,
                                           isHLS: false, isOpus: cand.isOpus, label: cand.label)
-                    info.client = "TV"
+                    info.client = short
                     return info
                 }
-                reasons.append("audio rifiutato (\(code < 0 ? "rete" : String(code)))")
+                reasons.append("\(short): audio rifiutato (\(code < 0 ? "rete" : String(code)))")
             }
         }
         throw InnertubeError.unplayable(reasons.isEmpty ? "nessun risultato" : reasons.joined(separator: ", "))
